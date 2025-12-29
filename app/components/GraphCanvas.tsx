@@ -294,7 +294,53 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     ctx.stroke();
   }, [graphToCanvas]);
 
-  // Draw a freehand curve with smoothing
+  // Simplify points using Ramer-Douglas-Peucker algorithm
+  const simplifyPoints = useCallback((points: Point[], tolerance: number = 0.05): Point[] => {
+    if (points.length < 3) return points;
+
+    const getPerpendicularDistance = (point: Point, lineStart: Point, lineEnd: Point): number => {
+      const dx = lineEnd.x - lineStart.x;
+      const dy = lineEnd.y - lineStart.y;
+
+      const mag = Math.sqrt(dx * dx + dy * dy);
+      if (mag === 0) return Math.sqrt(Math.pow(point.x - lineStart.x, 2) + Math.pow(point.y - lineStart.y, 2));
+
+      const u = ((point.x - lineStart.x) * dx + (point.y - lineStart.y) * dy) / (mag * mag);
+
+      const intersectX = lineStart.x + u * dx;
+      const intersectY = lineStart.y + u * dy;
+
+      return Math.sqrt(Math.pow(point.x - intersectX, 2) + Math.pow(point.y - intersectY, 2));
+    };
+
+    const rdp = (pts: Point[], epsilon: number): Point[] => {
+      if (pts.length < 3) return pts;
+
+      let dmax = 0;
+      let index = 0;
+      const end = pts.length - 1;
+
+      for (let i = 1; i < end; i++) {
+        const d = getPerpendicularDistance(pts[i], pts[0], pts[end]);
+        if (d > dmax) {
+          index = i;
+          dmax = d;
+        }
+      }
+
+      if (dmax > epsilon) {
+        const recResults1 = rdp(pts.slice(0, index + 1), epsilon);
+        const recResults2 = rdp(pts.slice(index), epsilon);
+        return recResults1.slice(0, -1).concat(recResults2);
+      } else {
+        return [pts[0], pts[end]];
+      }
+    };
+
+    return rdp(points, tolerance);
+  }, []);
+
+  // Draw a freehand curve with Catmull-Rom spline smoothing
   const drawFreehand = useCallback((ctx: CanvasRenderingContext2D, element: GraphElement) => {
     if (element.points.length < 2) return;
 
@@ -303,25 +349,48 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
-    const canvasPoints = element.points.map(p => graphToCanvas(p.x, p.y));
+    // Simplify points to reduce noise
+    const simplified = simplifyPoints(element.points, 0.05);
+    const canvasPoints = simplified.map(p => graphToCanvas(p.x, p.y));
+
+    if (canvasPoints.length < 2) {
+      // Fallback for very short paths
+      ctx.beginPath();
+      ctx.moveTo(canvasPoints[0].x, canvasPoints[0].y);
+      if (canvasPoints.length === 2) {
+        ctx.lineTo(canvasPoints[1].x, canvasPoints[1].y);
+      }
+      ctx.stroke();
+      return;
+    }
 
     ctx.beginPath();
     ctx.moveTo(canvasPoints[0].x, canvasPoints[0].y);
 
-    // Smooth curve using quadratic curves
-    for (let i = 1; i < canvasPoints.length - 1; i++) {
-      const xc = (canvasPoints[i].x + canvasPoints[i + 1].x) / 2;
-      const yc = (canvasPoints[i].y + canvasPoints[i + 1].y) / 2;
-      ctx.quadraticCurveTo(canvasPoints[i].x, canvasPoints[i].y, xc, yc);
+    if (canvasPoints.length === 2) {
+      ctx.lineTo(canvasPoints[1].x, canvasPoints[1].y);
+    } else {
+      // Catmull-Rom spline for smooth curves
+      const tension = 0.5; // 0.5 = Catmull-Rom, 0 = linear, 1 = tight curves
+
+      for (let i = 0; i < canvasPoints.length - 1; i++) {
+        const p0 = canvasPoints[i === 0 ? 0 : i - 1];
+        const p1 = canvasPoints[i];
+        const p2 = canvasPoints[i + 1];
+        const p3 = canvasPoints[i + 2] || p2;
+
+        // Draw cubic Bezier curve using Catmull-Rom control points
+        const cp1x = p1.x + (p2.x - p0.x) / 6 * tension;
+        const cp1y = p1.y + (p2.y - p0.y) / 6 * tension;
+        const cp2x = p2.x - (p3.x - p1.x) / 6 * tension;
+        const cp2y = p2.y - (p3.y - p1.y) / 6 * tension;
+
+        ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y);
+      }
     }
 
-    // Last point
-    const last = canvasPoints[canvasPoints.length - 1];
-    const secondLast = canvasPoints[canvasPoints.length - 2];
-    ctx.quadraticCurveTo(secondLast.x, secondLast.y, last.x, last.y);
-
     ctx.stroke();
-  }, [graphToCanvas]);
+  }, [graphToCanvas, simplifyPoints]);
 
   // Draw a function curve
   const drawFunction = useCallback((ctx: CanvasRenderingContext2D, element: GraphElement) => {
@@ -431,19 +500,34 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
         }
       }
     } else if (element.type === 'freehand' || element.type === 'function') {
-      const canvasPoints = element.points.map(p => graphToCanvas(p.x, p.y));
+      // Use simplified points and Catmull-Rom spline for fill areas too
+      const simplified = simplifyPoints(element.points, 0.05);
+      const canvasPoints = simplified.map(p => graphToCanvas(p.x, p.y));
 
       ctx.moveTo(canvasPoints[0].x, canvasPoints[0].y);
 
-      for (let i = 1; i < canvasPoints.length - 1; i++) {
-        const xc = (canvasPoints[i].x + canvasPoints[i + 1].x) / 2;
-        const yc = (canvasPoints[i].y + canvasPoints[i + 1].y) / 2;
-        ctx.quadraticCurveTo(canvasPoints[i].x, canvasPoints[i].y, xc, yc);
+      if (canvasPoints.length === 2) {
+        ctx.lineTo(canvasPoints[1].x, canvasPoints[1].y);
+      } else if (canvasPoints.length > 2) {
+        // Catmull-Rom spline
+        const tension = 0.5;
+
+        for (let i = 0; i < canvasPoints.length - 1; i++) {
+          const p0 = canvasPoints[i === 0 ? 0 : i - 1];
+          const p1 = canvasPoints[i];
+          const p2 = canvasPoints[i + 1];
+          const p3 = canvasPoints[i + 2] || p2;
+
+          const cp1x = p1.x + (p2.x - p0.x) / 6 * tension;
+          const cp1y = p1.y + (p2.y - p0.y) / 6 * tension;
+          const cp2x = p2.x - (p3.x - p1.x) / 6 * tension;
+          const cp2y = p2.y - (p3.y - p1.y) / 6 * tension;
+
+          ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y);
+        }
       }
 
       const last = canvasPoints[canvasPoints.length - 1];
-      const secondLast = canvasPoints[canvasPoints.length - 2];
-      ctx.quadraticCurveTo(secondLast.x, secondLast.y, last.x, last.y);
 
       if (fillToAxis) {
         // Always fill to x-axis when fillToAxis is true
@@ -466,7 +550,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
 
     // Restore canvas state (remove clipping and reset globalAlpha)
     ctx.restore();
-  }, [elements, graphToCanvas, panOffset]);
+  }, [elements, graphToCanvas, panOffset, simplifyPoints]);
 
   // Render everything
   const render = useCallback(() => {
@@ -546,20 +630,39 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       }
     }
 
-    // Draw current freehand path
+    // Draw current freehand path with smoothing
     if (isDrawing && drawMode === 'freehand' && currentPoints.length > 1) {
       ctx.strokeStyle = strokeColor;
       ctx.lineWidth = strokeWidth;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
 
-      const canvasPoints = currentPoints.map(p => graphToCanvas(p.x, p.y));
+      // Simplify points for live preview
+      const simplified = simplifyPoints(currentPoints, 0.05);
+      const canvasPoints = simplified.map(p => graphToCanvas(p.x, p.y));
 
       ctx.beginPath();
       ctx.moveTo(canvasPoints[0].x, canvasPoints[0].y);
 
-      for (let i = 1; i < canvasPoints.length; i++) {
-        ctx.lineTo(canvasPoints[i].x, canvasPoints[i].y);
+      if (canvasPoints.length === 2) {
+        ctx.lineTo(canvasPoints[1].x, canvasPoints[1].y);
+      } else if (canvasPoints.length > 2) {
+        // Use Catmull-Rom spline for live preview too
+        const tension = 0.5;
+
+        for (let i = 0; i < canvasPoints.length - 1; i++) {
+          const p0 = canvasPoints[i === 0 ? 0 : i - 1];
+          const p1 = canvasPoints[i];
+          const p2 = canvasPoints[i + 1];
+          const p3 = canvasPoints[i + 2] || p2;
+
+          const cp1x = p1.x + (p2.x - p0.x) / 6 * tension;
+          const cp1y = p1.y + (p2.y - p0.y) / 6 * tension;
+          const cp2x = p2.x - (p3.x - p1.x) / 6 * tension;
+          const cp2y = p2.y - (p3.y - p1.y) / 6 * tension;
+
+          ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y);
+        }
       }
 
       ctx.stroke();
@@ -635,7 +738,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
         });
       }
     }
-  }, [drawGrid, elements, fillAreas, currentPoints, tempControlPoint, isDrawing, drawMode, strokeColor, strokeWidth, graphToCanvas, drawLine, drawBezier, drawFreehand, fillAreaForElement, selectedElementId]);
+  }, [drawGrid, elements, fillAreas, currentPoints, tempControlPoint, isDrawing, drawMode, strokeColor, strokeWidth, graphToCanvas, drawLine, drawBezier, drawFreehand, fillAreaForElement, selectedElementId, simplifyPoints]);
 
   // Re-render when dependencies change
   useEffect(() => {
