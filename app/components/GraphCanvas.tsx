@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback, useImperativeHandle, forwardR
 import { flushSync } from 'react-dom';
 import { Parser } from 'expr-eval';
 
-export type DrawMode = 'line' | 'bezier' | 'freehand' | 'fill' | 'select' | 'function';
+export type DrawMode = 'line' | 'bezier' | 'freehand' | 'fill' | 'select' | 'function' | 'point';
 
 export type Action =
   | { type: 'element' }
@@ -17,7 +17,7 @@ export interface Point {
 }
 
 export interface GraphElement {
-  type: 'line' | 'bezier' | 'freehand' | 'function';
+  type: 'line' | 'bezier' | 'freehand' | 'function' | 'point';
   points: Point[];
   color: string;
   lineWidth: number;
@@ -25,6 +25,8 @@ export interface GraphElement {
   formula?: string;  // For function type
   xMin?: number;     // For function type
   xMax?: number;     // For function type
+  pointSize?: number;  // For point type
+  showProjection?: boolean;  // For point type - whether to show projection lines
 }
 
 export interface FillArea {
@@ -292,6 +294,61 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     ctx.moveTo(start.x, start.y);
     ctx.quadraticCurveTo(control.x, control.y, end.x, end.y);
     ctx.stroke();
+  }, [graphToCanvas]);
+
+  // Draw a point element
+  const drawPoint = useCallback((ctx: CanvasRenderingContext2D, element: GraphElement) => {
+    if (element.points.length < 1) return;
+
+    const point = element.points[0];
+    const canvasPoint = graphToCanvas(point.x, point.y);
+    const pointSize = element.pointSize || element.lineWidth * 2;
+
+    // Draw the point
+    ctx.fillStyle = element.color;
+    ctx.beginPath();
+    ctx.arc(canvasPoint.x, canvasPoint.y, pointSize, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Draw projection lines to axes if enabled
+    if (element.showProjection) {
+      ctx.strokeStyle = element.color;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([5, 5]); // Dashed lines
+
+      const origin = graphToCanvas(0, 0);
+      const xAxis = graphToCanvas(point.x, 0);
+      const yAxis = graphToCanvas(0, point.y);
+
+      // Vertical line to x-axis
+      ctx.beginPath();
+      ctx.moveTo(canvasPoint.x, canvasPoint.y);
+      ctx.lineTo(xAxis.x, xAxis.y);
+      ctx.stroke();
+
+      // Horizontal line to y-axis
+      ctx.beginPath();
+      ctx.moveTo(canvasPoint.x, canvasPoint.y);
+      ctx.lineTo(yAxis.x, yAxis.y);
+      ctx.stroke();
+
+      // Draw small markers on axes
+      ctx.setLineDash([]); // Solid lines
+      ctx.fillStyle = element.color;
+
+      // Marker on x-axis
+      ctx.beginPath();
+      ctx.arc(xAxis.x, xAxis.y, 3, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Marker on y-axis
+      ctx.beginPath();
+      ctx.arc(yAxis.x, yAxis.y, 3, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Reset line dash
+      ctx.setLineDash([]);
+    }
   }, [graphToCanvas]);
 
   // Simplify points using Ramer-Douglas-Peucker algorithm
@@ -583,6 +640,8 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
         drawFreehand(ctx, element);
       } else if (element.type === 'function') {
         drawFunction(ctx, element);
+      } else if (element.type === 'point') {
+        drawPoint(ctx, element);
       }
     });
 
@@ -668,8 +727,8 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       ctx.stroke();
     }
 
-    // Draw selection highlights (only in select mode)
-    if (drawMode === 'select' && selectedElementId !== null && selectedElementId < elements.length) {
+    // Draw selection highlights
+    if (selectedElementId !== null && selectedElementId < elements.length) {
       const selectedElement = elements[selectedElementId];
 
       // Draw control points for selected element
@@ -736,9 +795,28 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
           ctx.fill();
           ctx.stroke();
         });
+      } else if (selectedElement.type === 'point') {
+        // Draw selection ring around point
+        const point = selectedElement.points[0];
+        const canvasPoint = graphToCanvas(point.x, point.y);
+        const pointSize = selectedElement.pointSize || selectedElement.lineWidth * 2;
+
+        // Draw outer selection ring
+        ctx.strokeStyle = '#E67E22';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(canvasPoint.x, canvasPoint.y, pointSize + 5, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Draw inner white ring
+        ctx.strokeStyle = '#FFFFFF';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(canvasPoint.x, canvasPoint.y, pointSize + 3, 0, Math.PI * 2);
+        ctx.stroke();
       }
     }
-  }, [drawGrid, elements, fillAreas, currentPoints, tempControlPoint, isDrawing, drawMode, strokeColor, strokeWidth, graphToCanvas, drawLine, drawBezier, drawFreehand, fillAreaForElement, selectedElementId, simplifyPoints]);
+  }, [drawGrid, elements, fillAreas, currentPoints, tempControlPoint, isDrawing, drawMode, strokeColor, strokeWidth, graphToCanvas, drawLine, drawBezier, drawFreehand, drawPoint, fillAreaForElement, selectedElementId, simplifyPoints]);
 
   // Re-render when dependencies change
   useEffect(() => {
@@ -934,7 +1012,16 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       }
 
       // Check if clicked on the actual line/curve
-      if (element.type === 'line' && element.points.length >= 2) {
+      if (element.type === 'point' && element.points.length >= 1) {
+        const point = graphToCanvas(element.points[0].x, element.points[0].y);
+        const pointSize = element.pointSize || element.lineWidth * 2;
+        const distance = Math.sqrt(
+          Math.pow(canvasX - point.x, 2) + Math.pow(canvasY - point.y, 2)
+        );
+        if (distance <= pointSize + 5) {
+          return i;
+        }
+      } else if (element.type === 'line' && element.points.length >= 2) {
         const start = graphToCanvas(element.points[0].x, element.points[0].y);
         const end = graphToCanvas(element.points[1].x, element.points[1].y);
         if (isPointNearLine(canvasX, canvasY, start.x, start.y, end.x, end.y, 8)) {
@@ -1031,6 +1118,21 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
         setCurrentPoints([currentPoints[0], point]);
         setTempControlPoint(midpoint);
       }
+    } else if (drawMode === 'point') {
+      // Create point with default projection off
+      const newElement: GraphElement = {
+        type: 'point',
+        points: [point],
+        color: strokeColor,
+        lineWidth: strokeWidth,
+        pointSize: strokeWidth * 2,
+        showProjection: false
+      };
+      const newElementId = elements.length;
+      setElements(prev => [...prev, newElement]);
+      setActionHistory(prev => [...prev, { type: 'element' }]);
+      // Auto-select the newly created point
+      setSelectedElementId(newElementId);
     }
 
     onCoordinateClick?.(point);
@@ -1278,6 +1380,20 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     undoInProgressRef.current = false;
   }, []);
 
+  const togglePointProjection = useCallback((elementId: number) => {
+    if (elementId < 0 || elementId >= elements.length) return;
+    if (elements[elementId].type !== 'point') return;
+
+    setElements(prev => {
+      const newElements = [...prev];
+      newElements[elementId] = {
+        ...newElements[elementId],
+        showProjection: !newElements[elementId].showProjection
+      };
+      return newElements;
+    });
+  }, [elements]);
+
   const exportToPNG = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -1385,8 +1501,9 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     getSelectedElementId,
     updateSelectedElement,
     getExportData,
-    importData
-  }), [addLineByCoordinates, addFillArea, addFunction, clearCanvas, undo, elements, exportToPNG, getSelectedElement, getSelectedElementId, updateSelectedElement, getExportData, importData]);
+    importData,
+    togglePointProjection
+  }), [addLineByCoordinates, addFillArea, addFunction, clearCanvas, undo, elements, exportToPNG, getSelectedElement, getSelectedElementId, updateSelectedElement, getExportData, importData, togglePointProjection]);
 
   return (
     <canvas
@@ -1407,7 +1524,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
         e.preventDefault();
         handleMouseDown(e);
         // For touch devices, also handle click logic on touch start
-        if (drawMode === 'line' || drawMode === 'bezier' || drawMode === 'select') {
+        if (drawMode === 'line' || drawMode === 'bezier' || drawMode === 'select' || drawMode === 'point') {
           handleCanvasClick(e);
         }
       }}

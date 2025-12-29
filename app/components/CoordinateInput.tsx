@@ -8,9 +8,10 @@ export interface CoordinateInputProps {
   currentPoint?: Point;
   selectedElement?: GraphElement | null;
   selectedElementId?: number | null;
+  onTogglePointProjection?: (elementId: number) => void;
 }
 
-export default function CoordinateInput({ onAddLine, currentPoint, selectedElement, selectedElementId }: CoordinateInputProps) {
+export default function CoordinateInput({ onAddLine, currentPoint, selectedElement, selectedElementId, onTogglePointProjection }: CoordinateInputProps) {
   const [startX, setStartX] = useState('');
   const [startY, setStartY] = useState('');
   const [endX, setEndX] = useState('');
@@ -244,6 +245,36 @@ export default function CoordinateInput({ onAddLine, currentPoint, selectedEleme
                     </p>
                   )}
                 </div>
+              </div>
+            )}
+            {selectedElement.type === 'point' && (
+              <div>
+                <div>
+                  <p className="text-xs mb-1" style={{ color: 'var(--pencil-lead)', opacity: 0.6 }}>Point Location</p>
+                  <div className="px-3 py-2 rounded-md" style={{
+                    background: 'rgba(230, 126, 34, 0.1)',
+                    border: '1px solid var(--architect-orange)',
+                    fontFamily: 'JetBrains Mono, monospace',
+                    fontSize: '0.875rem',
+                    color: 'var(--architect-orange)',
+                    fontWeight: 600
+                  }}>
+                    ({selectedElement.points[0].x.toFixed(2)}, {selectedElement.points[0].y.toFixed(2)})
+                  </div>
+                </div>
+                {onTogglePointProjection && selectedElementId !== null && (
+                  <button
+                    onClick={() => onTogglePointProjection(selectedElementId)}
+                    className="w-full mt-3 px-4 py-2.5 rounded-md text-sm font-medium transition-all"
+                    style={{
+                      background: selectedElement.showProjection ? 'var(--architect-orange)' : 'transparent',
+                      color: selectedElement.showProjection ? 'white' : 'var(--architect-orange)',
+                      border: `1.5px solid var(--architect-orange)`
+                    }}
+                  >
+                    {selectedElement.showProjection ? '✓ Hide' : '+ Show'} Projection
+                  </button>
+                )}
               </div>
             )}
           </div>

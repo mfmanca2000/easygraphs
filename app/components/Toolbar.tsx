@@ -99,7 +99,7 @@ export default function Toolbar({
             Mode
           </label>
           <div className="grid grid-cols-2 gap-2">
-            {(['select', 'line', 'bezier', 'freehand', 'function'] as DrawMode[]).map((mode) => (
+            {(['select', 'point', 'line', 'bezier', 'freehand', 'function'] as DrawMode[]).map((mode) => (
               <button
                 key={mode}
                 onClick={() => onDrawModeChange(mode)}
@@ -110,7 +110,13 @@ export default function Toolbar({
                   border: `1.5px solid ${drawMode === mode ? 'var(--architect-blue)' : 'var(--canvas-border)'}`,
                 }}
               >
-                {mode === 'select' ? '↖ Select' : mode === 'function' ? 'ƒ(x) Function' : mode}
+                {mode === 'select' ? '↖ Select' :
+                 mode === 'point' ? '• Point' :
+                 mode === 'line' ? '─ Line' :
+                 mode === 'bezier' ? '∿ Bezier' :
+                 mode === 'freehand' ? '✎ Freehand' :
+                 mode === 'function' ? 'ƒ(x) Function' :
+                 mode}
               </button>
             ))}
           </div>

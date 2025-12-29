@@ -228,6 +228,15 @@ export default function Home() {
     }
   };
 
+  const handleTogglePointProjection = (elementId: number) => {
+    if (canvasRef.current) {
+      canvasRef.current.togglePointProjection(elementId);
+      // Update the selected element to reflect the change
+      const element = canvasRef.current.getSelectedElement();
+      setSelectedElement(element);
+    }
+  };
+
   return (
     <div className="min-h-screen relative" style={{ paddingTop: '2rem', paddingBottom: '2rem' }}>
       <div className="relative z-10 max-w-400 mx-auto px-4 sm:px-6 lg:px-8">
@@ -398,6 +407,7 @@ export default function Home() {
                 currentPoint={currentPoint}
                 selectedElement={selectedElement}
                 selectedElementId={selectedElementId}
+                onTogglePointProjection={handleTogglePointProjection}
               />
             )}
 
