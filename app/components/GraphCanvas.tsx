@@ -2,8 +2,9 @@
 
 import { useEffect, useRef, useState, useCallback, useImperativeHandle, forwardRef } from 'react';
 import { flushSync } from 'react-dom';
+import { Parser } from 'expr-eval';
 
-export type DrawMode = 'line' | 'bezier' | 'freehand' | 'fill' | 'select';
+export type DrawMode = 'line' | 'bezier' | 'freehand' | 'fill' | 'select' | 'function';
 
 export type Action =
   | { type: 'element' }
@@ -16,11 +17,14 @@ export interface Point {
 }
 
 export interface GraphElement {
-  type: 'line' | 'bezier' | 'freehand';
+  type: 'line' | 'bezier' | 'freehand' | 'function';
   points: Point[];
   color: string;
   lineWidth: number;
   controlPoint?: Point;
+  formula?: string;  // For function type
+  xMin?: number;     // For function type
+  xMax?: number;     // For function type
 }
 
 export interface FillArea {
@@ -81,6 +85,7 @@ export interface GraphCanvasProps {
 export interface GraphCanvasHandle {
   addLineByCoordinates: (start: Point, end: Point) => void;
   addFillArea: (elementId: number, fillAbove: boolean, color: string, fillToAxis?: boolean) => void;
+  addFunction: (formula: string, xMin: number, xMax: number, color: string, lineWidth: number) => void;
   clearCanvas: () => void;
   undo: () => void;
   getElements: () => GraphElement[];
@@ -318,6 +323,37 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     ctx.stroke();
   }, [graphToCanvas]);
 
+  // Draw a function curve
+  const drawFunction = useCallback((ctx: CanvasRenderingContext2D, element: GraphElement) => {
+    if (element.points.length < 2) return;
+
+    ctx.strokeStyle = element.color;
+    ctx.lineWidth = element.lineWidth;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    const canvasPoints = element.points.map(p => graphToCanvas(p.x, p.y));
+
+    ctx.beginPath();
+    ctx.moveTo(canvasPoints[0].x, canvasPoints[0].y);
+
+    // Draw smooth curve through all points
+    for (let i = 1; i < canvasPoints.length - 1; i++) {
+      const xc = (canvasPoints[i].x + canvasPoints[i + 1].x) / 2;
+      const yc = (canvasPoints[i].y + canvasPoints[i + 1].y) / 2;
+      ctx.quadraticCurveTo(canvasPoints[i].x, canvasPoints[i].y, xc, yc);
+    }
+
+    // Last point
+    if (canvasPoints.length > 1) {
+      const last = canvasPoints[canvasPoints.length - 1];
+      const secondLast = canvasPoints[canvasPoints.length - 2];
+      ctx.quadraticCurveTo(secondLast.x, secondLast.y, last.x, last.y);
+    }
+
+    ctx.stroke();
+  }, [graphToCanvas]);
+
   // Fill area above or below a curve
   const fillAreaForElement = useCallback((ctx: CanvasRenderingContext2D, elementId: number, fillAbove: boolean, color: string, fillToAxis: boolean = false) => {
     const element = elements[elementId];
@@ -394,7 +430,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
           ctx.lineTo(start.x, canvas.height);
         }
       }
-    } else if (element.type === 'freehand') {
+    } else if (element.type === 'freehand' || element.type === 'function') {
       const canvasPoints = element.points.map(p => graphToCanvas(p.x, p.y));
 
       ctx.moveTo(canvasPoints[0].x, canvasPoints[0].y);
@@ -461,6 +497,8 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
         drawBezier(ctx, element);
       } else if (element.type === 'freehand') {
         drawFreehand(ctx, element);
+      } else if (element.type === 'function') {
+        drawFunction(ctx, element);
       }
     });
 
@@ -1008,6 +1046,68 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     setActionHistory(prev => [...prev, { type: 'fill' }]);
   }, []);
 
+  const addFunction = useCallback((formula: string, xMin: number, xMax: number, color: string, lineWidth: number) => {
+    try {
+      const parser = new Parser();
+      const expr = parser.parse(formula);
+
+      // Sample points across the range
+      const numSamples = 500; // High resolution for smooth curves
+      const step = (xMax - xMin) / numSamples;
+      const points: Point[] = [];
+
+      for (let i = 0; i <= numSamples; i++) {
+        const x = xMin + i * step;
+        try {
+          const y = expr.evaluate({ x });
+
+          // Only add valid points (not NaN, not Infinity)
+          if (isFinite(y)) {
+            points.push({ x, y });
+          } else {
+            // If we encounter an invalid point, break the curve
+            if (points.length > 1) {
+              // Create element with points so far
+              const newElement: GraphElement = {
+                type: 'function',
+                points: [...points],
+                color,
+                lineWidth,
+                formula,
+                xMin,
+                xMax
+              };
+              setElements(prev => [...prev, newElement]);
+              setActionHistory(prev => [...prev, { type: 'element' }]);
+            }
+            points.length = 0; // Start new segment
+          }
+        } catch {
+          // Skip invalid points
+          continue;
+        }
+      }
+
+      // Add the final element if we have points
+      if (points.length > 1) {
+        const newElement: GraphElement = {
+          type: 'function',
+          points,
+          color,
+          lineWidth,
+          formula,
+          xMin,
+          xMax
+        };
+        setElements(prev => [...prev, newElement]);
+        setActionHistory(prev => [...prev, { type: 'element' }]);
+      }
+    } catch (error) {
+      console.error('Error evaluating function:', error);
+      throw new Error(`Invalid function: ${formula}`);
+    }
+  }, []);
+
   const clearCanvas = useCallback(() => {
     setElements([]);
     setFillAreas([]);
@@ -1027,10 +1127,6 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
 
     undoInProgressRef.current = true;
 
-    // Get the current state values
-    let lastAction: Action | null = null;
-
-    // Use flushSync to ensure synchronous state updates
     flushSync(() => {
       setActionHistory(prevHistory => {
         if (prevHistory.length === 0) {
@@ -1038,48 +1134,42 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
           return prevHistory;
         }
 
-        lastAction = prevHistory[prevHistory.length - 1];
+        const lastAction = prevHistory[prevHistory.length - 1];
         const newHistory = prevHistory.slice(0, -1);
+
+        // Update elements or fills based on the action type
+        if (lastAction.type === 'element') {
+          setElements(prev => {
+            if (prev.length === 0) return prev;
+            const newElements = prev.slice(0, -1);
+            // Clear selection if we're removing the selected element
+            setSelectedElementId(current => {
+              if (current !== null && current >= newElements.length) {
+                return null;
+              }
+              return current;
+            });
+            return newElements;
+          });
+        } else if (lastAction.type === 'fill') {
+          setFillAreas(prev => {
+            if (prev.length === 0) return prev;
+            return prev.slice(0, -1);
+          });
+        } else if (lastAction.type === 'modify') {
+          // Restore the previous state of the modified element
+          setElements(prev => {
+            const newElements = [...prev];
+            if (lastAction.elementId < newElements.length) {
+              newElements[lastAction.elementId] = { ...lastAction.previousState };
+            }
+            return newElements;
+          });
+        }
 
         return newHistory;
       });
     });
-
-    // Update elements or fills based on the action type (after history is updated)
-    if (lastAction?.type === 'element') {
-      flushSync(() => {
-        setElements(prev => {
-          if (prev.length === 0) return prev;
-          const newElements = prev.slice(0, -1);
-          // Clear selection if we're removing the selected element
-          setSelectedElementId(current => {
-            if (current !== null && current >= newElements.length) {
-              return null;
-            }
-            return current;
-          });
-          return newElements;
-        });
-      });
-    } else if (lastAction?.type === 'fill') {
-      flushSync(() => {
-        setFillAreas(prev => {
-          if (prev.length === 0) return prev;
-          return prev.slice(0, -1);
-        });
-      });
-    } else if (lastAction?.type === 'modify') {
-      // Restore the previous state of the modified element
-      flushSync(() => {
-        setElements(prev => {
-          const newElements = [...prev];
-          if (lastAction.elementId < newElements.length) {
-            newElements[lastAction.elementId] = { ...lastAction.previousState };
-          }
-          return newElements;
-        });
-      });
-    }
 
     // Reset the flag
     undoInProgressRef.current = false;
@@ -1183,6 +1273,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
   useImperativeHandle(ref, () => ({
     addLineByCoordinates,
     addFillArea,
+    addFunction,
     clearCanvas,
     undo,
     getElements: () => elements,
@@ -1192,7 +1283,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     updateSelectedElement,
     getExportData,
     importData
-  }), [addLineByCoordinates, addFillArea, clearCanvas, undo, elements, exportToPNG, getSelectedElement, getSelectedElementId, updateSelectedElement, getExportData, importData]);
+  }), [addLineByCoordinates, addFillArea, addFunction, clearCanvas, undo, elements, exportToPNG, getSelectedElement, getSelectedElementId, updateSelectedElement, getExportData, importData]);
 
   return (
     <canvas

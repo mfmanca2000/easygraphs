@@ -6,6 +6,7 @@ import Toolbar from './components/Toolbar';
 import ScaleControls from './components/ScaleControls';
 import CoordinateInput from './components/CoordinateInput';
 import FillAreaControls from './components/FillAreaControls';
+import FunctionInput from './components/FunctionInput';
 
 export default function Home() {
   const canvasRef = useRef<GraphCanvasHandle>(null);
@@ -78,6 +79,12 @@ export default function Home() {
   const handleAddFill = (elementId: number, fillAbove: boolean, color: string, fillToAxis?: boolean) => {
     if (canvasRef.current) {
       canvasRef.current.addFillArea(elementId, fillAbove, color, fillToAxis);
+    }
+  };
+
+  const handleAddFunction = (formula: string, xMin: number, xMax: number, color: string, lineWidth: number) => {
+    if (canvasRef.current) {
+      canvasRef.current.addFunction(formula, xMin, xMax, color, lineWidth);
     }
   };
 
@@ -365,7 +372,11 @@ export default function Home() {
                       <li className="flex items-start gap-2">
                         <span style={{ color: 'var(--architect-green)', fontWeight: 600 }}>→</span>
                         <span><strong>Freehand:</strong> Click and drag to draw smoothly</span>
-                      </li>                     
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span style={{ color: 'var(--architect-blue)', fontWeight: 600 }}>→</span>
+                        <span><strong>Function:</strong> Enter f(x) formula to plot graphs</span>
+                      </li>
                     </ul>
                   </div>
                 </div>
@@ -375,12 +386,20 @@ export default function Home() {
 
           {/* Right Sidebar */}
           <aside className="w-full lg:w-80 lg:shrink-0 space-y-4 animate-slideInRight delay-300 order-3">
-            <CoordinateInput
-              onAddLine={handleAddLineByCoordinates}
-              currentPoint={currentPoint}
-              selectedElement={selectedElement}
-              selectedElementId={selectedElementId}
-            />
+            {drawMode === 'function' ? (
+              <FunctionInput
+                onAddFunction={handleAddFunction}
+                strokeColor={strokeColor}
+                strokeWidth={strokeWidth}
+              />
+            ) : (
+              <CoordinateInput
+                onAddLine={handleAddLineByCoordinates}
+                currentPoint={currentPoint}
+                selectedElement={selectedElement}
+                selectedElementId={selectedElementId}
+              />
+            )}
 
             <FillAreaControls
               elementCount={elementCount}
