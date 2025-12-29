@@ -57,6 +57,7 @@ export default function Home() {
   };
 
   const handleUndo = () => {
+    console.log('handleUndo called');
     if (canvasRef.current) {
       canvasRef.current.undo();
     }
@@ -103,7 +104,7 @@ export default function Home() {
 
   return (
     <div className="min-h-screen relative" style={{ paddingTop: '2rem', paddingBottom: '2rem' }}>
-      <div className="relative z-10 max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="relative z-10 max-w-400 mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="text-center mb-8 animate-fadeInUp">
           <div className="inline-block mb-4">
@@ -127,7 +128,7 @@ export default function Home() {
         {/* Main Layout */}
         <div className="flex flex-col lg:flex-row gap-6 items-start justify-center">
           {/* Left Sidebar */}
-          <aside className="w-full lg:w-80 lg:flex-shrink-0 space-y-4 animate-slideInLeft delay-100 order-2 lg:order-1">
+          <aside className="w-full lg:w-80 lg:shrink-0 space-y-4 animate-slideInLeft delay-100 order-2 lg:order-1">
             <Toolbar
               showGrid={showGrid}
               onToggleGrid={() => setShowGrid(!showGrid)}
@@ -209,6 +210,7 @@ export default function Home() {
                   onCoordinateClick={handleCoordinateClick}
                   onSelectionChange={handleSelectionChange}
                   onElementsChange={handleElementsChange}
+                  onScaleChange={setScale}
                 />
               </div>
 
@@ -218,7 +220,7 @@ export default function Home() {
                 border: '1px solid var(--graph-lines)'
               }}>
                 <div className="flex items-start gap-3">
-                  <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center" style={{
+                  <div className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center" style={{
                     background: 'var(--architect-blue)',
                     color: 'white'
                   }}>
@@ -242,11 +244,7 @@ export default function Home() {
                       <li className="flex items-start gap-2">
                         <span style={{ color: 'var(--architect-green)', fontWeight: 600 }}>→</span>
                         <span><strong>Freehand:</strong> Click and drag to draw smoothly</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span style={{ color: 'var(--architect-red)', fontWeight: 600 }}>→</span>
-                        <span><strong>Fill:</strong> Color areas above/below curves</span>
-                      </li>
+                      </li>                     
                     </ul>
                   </div>
                 </div>
@@ -255,7 +253,7 @@ export default function Home() {
           </main>
 
           {/* Right Sidebar */}
-          <aside className="w-full lg:w-80 lg:flex-shrink-0 space-y-4 animate-slideInRight delay-300 order-3">
+          <aside className="w-full lg:w-80 lg:shrink-0 space-y-4 animate-slideInRight delay-300 order-3">
             <CoordinateInput
               onAddLine={handleAddLineByCoordinates}
               currentPoint={currentPoint}

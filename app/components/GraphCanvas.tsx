@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback, useImperativeHandle, forwardRef } from 'react';
+import { flushSync } from 'react-dom';
 
 export type DrawMode = 'line' | 'bezier' | 'freehand' | 'fill' | 'select';
 
@@ -36,6 +37,7 @@ export interface GraphCanvasProps {
   onCoordinateClick?: (point: Point) => void;
   onSelectionChange?: (elementId: number | null) => void;
   onElementsChange?: (elementCount: number) => void;
+  onScaleChange?: (scale: { x: number; y: number }) => void;
 }
 
 export interface GraphCanvasHandle {
@@ -61,12 +63,14 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     scale,
     onCoordinateClick,
     onSelectionChange,
-    onElementsChange
+    onElementsChange,
+    onScaleChange
   } = props;
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [elements, setElements] = useState<GraphElement[]>([]);
   const [fillAreas, setFillAreas] = useState<FillArea[]>([]);
+  const [actionHistory, setActionHistory] = useState<('element' | 'fill')[]>([]);
   const [currentPoints, setCurrentPoints] = useState<Point[]>([]);
   const [isDrawing, setIsDrawing] = useState(false);
   const [tempControlPoint, setTempControlPoint] = useState<Point | null>(null);
@@ -77,41 +81,47 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
   const [draggingPointIndex, setDraggingPointIndex] = useState<number | null>(null);
   const [draggingControlPointFlag, setDraggingControlPointFlag] = useState(false);
 
+  // Pan offset for mouse-centered zooming (in pixels)
+  const [panOffset, setPanOffset] = useState<Point>({ x: 0, y: 0 });
+
+  // Ref to prevent duplicate undo operations
+  const undoInProgressRef = useRef(false);
+
   // Convert canvas coordinates to graph coordinates
   const canvasToGraph = useCallback((canvasX: number, canvasY: number): Point => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
 
-    const centerX = canvas.width / 2;
-    const centerY = canvas.height / 2;
+    const centerX = canvas.width / 2 + panOffset.x;
+    const centerY = canvas.height / 2 + panOffset.y;
 
     return {
       x: ((canvasX - centerX) / scale.x),
       y: ((centerY - canvasY) / scale.y)
     };
-  }, [scale]);
+  }, [scale, panOffset]);
 
   // Convert graph coordinates to canvas coordinates
   const graphToCanvas = useCallback((graphX: number, graphY: number): Point => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
 
-    const centerX = canvas.width / 2;
-    const centerY = canvas.height / 2;
+    const centerX = canvas.width / 2 + panOffset.x;
+    const centerY = canvas.height / 2 + panOffset.y;
 
     return {
       x: centerX + graphX * scale.x,
       y: centerY - graphY * scale.y
     };
-  }, [scale]);
+  }, [scale, panOffset]);
 
   // Draw grid
   const drawGrid = useCallback((ctx: CanvasRenderingContext2D) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const centerX = canvas.width / 2;
-    const centerY = canvas.height / 2;
+    const centerX = canvas.width / 2 + panOffset.x;
+    const centerY = canvas.height / 2 + panOffset.y;
 
     // Draw grid lines if enabled
     if (showGrid) {
@@ -199,7 +209,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       ctx.textBaseline = 'top';
       ctx.fillText('0', centerX - 5, centerY + 5);
     }
-  }, [showGrid, showAxisUnits, scale]);
+  }, [showGrid, showAxisUnits, scale, panOffset]);
 
   // Draw a line element
   const drawLine = useCallback((ctx: CanvasRenderingContext2D, element: GraphElement) => {
@@ -275,13 +285,13 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const centerY = canvas.height / 2;
-
-    ctx.fillStyle = color;
-    ctx.globalAlpha = 0.3;
+    const centerY = canvas.height / 2 + panOffset.y;
 
     // Save canvas state for clipping
     ctx.save();
+
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.3;
 
     // If filling to axis, clip to only the relevant half
     if (fillToAxis) {
@@ -376,11 +386,10 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
 
     ctx.closePath();
     ctx.fill();
-    ctx.globalAlpha = 1.0;
 
-    // Restore canvas state (remove clipping)
+    // Restore canvas state (remove clipping and reset globalAlpha)
     ctx.restore();
-  }, [elements, graphToCanvas]);
+  }, [elements, graphToCanvas, panOffset]);
 
   // Render everything
   const render = useCallback(() => {
@@ -397,7 +406,10 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
 
     // Draw fill areas first (below elements)
     fillAreas.forEach(fillArea => {
-      fillAreaForElement(ctx, fillArea.elementId, fillArea.fillAbove, fillArea.color, fillArea.fillToAxis || false);
+      // Only draw fills for elements that still exist
+      if (fillArea.elementId < elements.length) {
+        fillAreaForElement(ctx, fillArea.elementId, fillArea.fillAbove, fillArea.color, fillArea.fillToAxis || false);
+      }
     });
 
     // Draw all elements
@@ -550,6 +562,54 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
   useEffect(() => {
     render();
   }, [render]);
+
+  // Add wheel event listener with passive: false to allow preventDefault
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const wheelHandler = (e: WheelEvent) => {
+      e.preventDefault();
+
+      if (!onScaleChange) return;
+
+      // Get mouse position in canvas coordinates
+      const rect = canvas.getBoundingClientRect();
+      const canvasX = e.clientX - rect.left;
+      const canvasY = e.clientY - rect.top;
+
+      // Get current center with offset
+      const centerX = canvas.width / 2 + panOffset.x;
+      const centerY = canvas.height / 2 + panOffset.y;
+
+      // Calculate graph coordinates of mouse position (before zoom)
+      const graphX = (canvasX - centerX) / scale.x;
+      const graphY = (centerY - canvasY) / scale.y;
+
+      // Calculate zoom factor (negative deltaY means zoom in)
+      const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
+
+      // Calculate new scale
+      const newScaleX = Math.min(100, Math.max(10, scale.x * zoomFactor));
+      const newScaleY = Math.min(100, Math.max(10, scale.y * zoomFactor));
+
+      // Calculate new offset to keep the graph point under mouse cursor
+      const newOffsetX = canvasX - graphX * newScaleX - canvas.width / 2;
+      const newOffsetY2 = canvasY + graphY * newScaleY - canvas.height / 2;
+
+      // Update scale via callback
+      onScaleChange({ x: newScaleX, y: newScaleY });
+
+      // Update pan offset
+      setPanOffset({ x: newOffsetX, y: newOffsetY2 });
+    };
+
+    canvas.addEventListener('wheel', wheelHandler, { passive: false });
+
+    return () => {
+      canvas.removeEventListener('wheel', wheelHandler);
+    };
+  }, [scale, panOffset, onScaleChange]);
 
   // Notify parent when selection changes or when selected element's data changes
   useEffect(() => {
@@ -735,6 +795,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
           lineWidth: strokeWidth
         };
         setElements(prev => [...prev, newElement]);
+        setActionHistory(prev => [...prev, 'element']);
         setCurrentPoints([]);
       }
     } else if (drawMode === 'bezier') {
@@ -833,6 +894,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
         lineWidth: strokeWidth
       };
       setElements(prev => [...prev, newElement]);
+      setActionHistory(prev => [...prev, 'element']);
       setCurrentPoints([]);
       setIsDrawing(false);
     } else if (drawMode === 'bezier' && draggingControl) {
@@ -844,7 +906,14 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
           color: strokeColor,
           lineWidth: strokeWidth
         };
-        setElements(prev => [...prev, newElement]);
+        setElements(prev => {
+          console.log('Adding bezier element, current count:', prev.length);
+          return [...prev, newElement];
+        });
+        setActionHistory(prev => {
+          console.log('Adding to history, current count:', prev.length);
+          return [...prev, 'element'];
+        });
         setCurrentPoints([]);
         setTempControlPoint(null);
       }
@@ -861,15 +930,18 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       lineWidth: strokeWidth
     };
     setElements(prev => [...prev, newElement]);
+    setActionHistory(prev => [...prev, 'element']);
   }, [strokeColor, strokeWidth]);
 
   const addFillArea = useCallback((elementId: number, fillAbove: boolean, color: string, fillToAxis: boolean = false) => {
     setFillAreas(prev => [...prev, { elementId, fillAbove, color, fillToAxis }]);
+    setActionHistory(prev => [...prev, 'fill']);
   }, []);
 
   const clearCanvas = useCallback(() => {
     setElements([]);
     setFillAreas([]);
+    setActionHistory([]);
     setCurrentPoints([]);
     setTempControlPoint(null);
     setSelectedElementId(null);
@@ -878,17 +950,70 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
   }, []);
 
   const undo = useCallback(() => {
-    setElements(prev => {
-      const newElements = prev.slice(0, -1);
-      // Clear selection if we're removing the selected element
-      setSelectedElementId(current => {
-        if (current !== null && current >= newElements.length) {
-          return null;
+    console.log('=== UNDO FUNCTION CALLED ===');
+    console.log('undoInProgressRef.current:', undoInProgressRef.current);
+
+    // Prevent duplicate undo operations
+    if (undoInProgressRef.current) {
+      console.log('Undo already in progress, skipping');
+      return;
+    }
+
+    console.log('Proceeding with undo');
+    undoInProgressRef.current = true;
+
+    // Get the current state values
+    let lastActionType: 'element' | 'fill' | null = null;
+
+    // Use flushSync to ensure synchronous state updates
+    flushSync(() => {
+      setActionHistory(prevHistory => {
+        if (prevHistory.length === 0) {
+          undoInProgressRef.current = false;
+          return prevHistory;
         }
-        return current;
+
+        lastActionType = prevHistory[prevHistory.length - 1];
+        const newHistory = prevHistory.slice(0, -1);
+
+        console.log('Undo - removing action type:', lastActionType);
+        console.log('History before:', prevHistory);
+        console.log('History after:', newHistory);
+
+        return newHistory;
       });
-      return newElements;
     });
+
+    // Update elements or fills based on the action type (after history is updated)
+    if (lastActionType === 'element') {
+      flushSync(() => {
+        setElements(prev => {
+          if (prev.length === 0) return prev;
+          console.log('Removing element, count before:', prev.length);
+          const newElements = prev.slice(0, -1);
+          console.log('Element count after:', newElements.length);
+          // Clear selection if we're removing the selected element
+          setSelectedElementId(current => {
+            if (current !== null && current >= newElements.length) {
+              return null;
+            }
+            return current;
+          });
+          return newElements;
+        });
+      });
+    } else if (lastActionType === 'fill') {
+      flushSync(() => {
+        setFillAreas(prev => {
+          if (prev.length === 0) return prev;
+          console.log('Removing fill, count before:', prev.length);
+          return prev.slice(0, -1);
+        });
+      });
+    }
+
+    // Reset the flag
+    undoInProgressRef.current = false;
   }, []);
 
   const exportToPNG = useCallback(() => {
