@@ -90,13 +90,16 @@ export interface GraphCanvasHandle {
   addFunction: (formula: string, xMin: number, xMax: number, color: string, lineWidth: number) => void;
   clearCanvas: () => void;
   undo: () => void;
+  redo: () => void;
   getElements: () => GraphElement[];
   exportToPNG: () => void;
   getSelectedElement: () => GraphElement | null;
   getSelectedElementId: () => number | null;
-  updateSelectedElement: (color: string, lineWidth: number) => void;
+  updateSelectedElement: (color: string, lineWidth: number, addToHistory?: boolean, previousState?: GraphElement) => void;
+  addModifyAction: (elementId: number, previousState: GraphElement) => void;
   getExportData: () => GraphExportData;
   importData: (data: GraphExportData) => void;
+  togglePointProjection: (elementId: number) => void;
 }
 
 const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function GraphCanvasComponent(props, ref) {
@@ -119,6 +122,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
   const [elements, setElements] = useState<GraphElement[]>([]);
   const [fillAreas, setFillAreas] = useState<FillArea[]>([]);
   const [actionHistory, setActionHistory] = useState<Action[]>([]);
+  const [redoHistory, setRedoHistory] = useState<Action[]>([]);
   const [currentPoints, setCurrentPoints] = useState<Point[]>([]);
   const [isDrawing, setIsDrawing] = useState(false);
   const [tempControlPoint, setTempControlPoint] = useState<Point | null>(null);
@@ -1105,6 +1109,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
         };
         setElements(prev => [...prev, newElement]);
         setActionHistory(prev => [...prev, { type: 'element' }]);
+        setRedoHistory([]);
         setCurrentPoints([]);
       }
     } else if (drawMode === 'bezier') {
@@ -1131,6 +1136,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       const newElementId = elements.length;
       setElements(prev => [...prev, newElement]);
       setActionHistory(prev => [...prev, { type: 'element' }]);
+      setRedoHistory([]);
       // Auto-select the newly created point
       setSelectedElementId(newElementId);
     }
@@ -1214,6 +1220,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       };
       setElements(prev => [...prev, newElement]);
       setActionHistory(prev => [...prev, { type: 'element' }]);
+      setRedoHistory([]);
       setCurrentPoints([]);
       setIsDrawing(false);
     } else if (drawMode === 'bezier' && draggingControl) {
@@ -1227,6 +1234,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
         };
         setElements(prev => [...prev, newElement]);
         setActionHistory(prev => [...prev, { type: 'element' }]);
+        setRedoHistory([]);
         setCurrentPoints([]);
         setTempControlPoint(null);
       }
@@ -1244,11 +1252,13 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     };
     setElements(prev => [...prev, newElement]);
     setActionHistory(prev => [...prev, { type: 'element' }]);
+    setRedoHistory([]);
   }, [strokeColor, strokeWidth]);
 
   const addFillArea = useCallback((elementId: number, fillAbove: boolean, color: string, fillToAxis: boolean = false) => {
     setFillAreas(prev => [...prev, { elementId, fillAbove, color, fillToAxis }]);
     setActionHistory(prev => [...prev, { type: 'fill' }]);
+    setRedoHistory([]);
   }, []);
 
   const addFunction = useCallback((formula: string, xMin: number, xMax: number, color: string, lineWidth: number) => {
@@ -1284,6 +1294,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
               };
               setElements(prev => [...prev, newElement]);
               setActionHistory(prev => [...prev, { type: 'element' }]);
+              setRedoHistory([]);
             }
             points.length = 0; // Start new segment
           }
@@ -1306,6 +1317,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
         };
         setElements(prev => [...prev, newElement]);
         setActionHistory(prev => [...prev, { type: 'element' }]);
+        setRedoHistory([]);
       }
     } catch (error) {
       console.error('Error evaluating function:', error);
@@ -1317,6 +1329,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     setElements([]);
     setFillAreas([]);
     setActionHistory([]);
+    setRedoHistory([]);
     setCurrentPoints([]);
     setTempControlPoint(null);
     setSelectedElementId(null);
@@ -1330,59 +1343,123 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       return;
     }
 
+    if (actionHistory.length === 0) {
+      return;
+    }
+
     undoInProgressRef.current = true;
 
+    const lastAction = actionHistory[actionHistory.length - 1];
+    const newHistory = actionHistory.slice(0, -1);
+
     flushSync(() => {
-      setActionHistory(prevHistory => {
-        if (prevHistory.length === 0) {
-          undoInProgressRef.current = false;
-          return prevHistory;
+      // Update action history first
+      setActionHistory(newHistory);
+
+      // Handle different action types
+      if (lastAction.type === 'element') {
+        const removedElement = elements[elements.length - 1];
+        const newElements = elements.slice(0, -1);
+
+        // Update elements
+        setElements(newElements);
+
+        // Clear selection if needed
+        if (selectedElementId !== null && selectedElementId >= newElements.length) {
+          setSelectedElementId(null);
         }
 
-        const lastAction = prevHistory[prevHistory.length - 1];
-        const newHistory = prevHistory.slice(0, -1);
+        // Add to redo history
+        setRedoHistory(prev => [...prev, {
+          type: 'element',
+          removedElement
+        } as Action & { removedElement: GraphElement }]);
 
-        // Update elements or fills based on the action type
-        if (lastAction.type === 'element') {
-          setElements(prev => {
-            if (prev.length === 0) return prev;
-            const newElements = prev.slice(0, -1);
-            // Clear selection if we're removing the selected element
-            setSelectedElementId(current => {
-              if (current !== null && current >= newElements.length) {
-                return null;
-              }
-              return current;
-            });
-            return newElements;
-          });
-        } else if (lastAction.type === 'fill') {
-          setFillAreas(prev => {
-            if (prev.length === 0) return prev;
-            return prev.slice(0, -1);
-          });
-        } else if (lastAction.type === 'modify') {
-          // Restore the previous state of the modified element
-          setElements(prev => {
-            const newElements = [...prev];
-            if (lastAction.elementId < newElements.length) {
-              newElements[lastAction.elementId] = { ...lastAction.previousState };
-            }
-            return newElements;
-          });
+      } else if (lastAction.type === 'fill') {
+        const removedFill = fillAreas[fillAreas.length - 1];
+        const newFills = fillAreas.slice(0, -1);
+
+        // Update fills
+        setFillAreas(newFills);
+
+        // Add to redo history
+        setRedoHistory(prev => [...prev, {
+          type: 'fill',
+          removedFill
+        } as Action & { removedFill: FillArea }]);
+
+      } else if (lastAction.type === 'modify') {
+        if (lastAction.elementId < elements.length) {
+          const currentState = { ...elements[lastAction.elementId] };
+          const newElements = [...elements];
+          newElements[lastAction.elementId] = { ...lastAction.previousState };
+
+          // Update elements
+          setElements(newElements);
+
+          // Add to redo history
+          setRedoHistory(prev => [...prev, {
+            type: 'modify',
+            elementId: lastAction.elementId,
+            previousState: currentState
+          }]);
         }
-
-        return newHistory;
-      });
+      }
     });
 
     // Reset the flag
     undoInProgressRef.current = false;
-  }, []);
+  }, [actionHistory, elements, fillAreas, selectedElementId]);
+
+  const redo = useCallback(() => {
+    if (redoHistory.length === 0) {
+      return;
+    }
+
+    const lastRedoAction = redoHistory[redoHistory.length - 1];
+    const newRedoHistory = redoHistory.slice(0, -1);
+
+    flushSync(() => {
+      // Update redo history first
+      setRedoHistory(newRedoHistory);
+
+      // Restore the undone action
+      if (lastRedoAction.type === 'element') {
+        const actionWithElement = lastRedoAction as Action & { removedElement: GraphElement };
+        if (actionWithElement.removedElement) {
+          setElements(prev => [...prev, actionWithElement.removedElement]);
+          setActionHistory(prev => [...prev, { type: 'element' }]);
+        }
+      } else if (lastRedoAction.type === 'fill') {
+        const actionWithFill = lastRedoAction as Action & { removedFill: FillArea };
+        if (actionWithFill.removedFill) {
+          setFillAreas(prev => [...prev, actionWithFill.removedFill]);
+          setActionHistory(prev => [...prev, { type: 'fill' }]);
+        }
+      } else if (lastRedoAction.type === 'modify') {
+        const modifyAction = lastRedoAction as Action & { elementId: number; previousState: GraphElement };
+        if (modifyAction.elementId < elements.length) {
+          const currentState = { ...elements[modifyAction.elementId] };
+          const newElements = [...elements];
+          newElements[modifyAction.elementId] = { ...modifyAction.previousState };
+
+          setElements(newElements);
+          setActionHistory(prev => [...prev, {
+            type: 'modify',
+            elementId: modifyAction.elementId,
+            previousState: currentState
+          }]);
+        }
+      }
+    });
+  }, [redoHistory, elements]);
 
   const togglePointProjection = useCallback((elementId: number) => {
     if (elementId < 0 || elementId >= elements.length) return;
     if (elements[elementId].type !== 'point') return;
+
+    // Save the previous state for undo
+    const previousElement = { ...elements[elementId] };
 
     setElements(prev => {
       const newElements = [...prev];
@@ -1392,6 +1469,14 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       };
       return newElements;
     });
+
+    // Add this projection toggle as a discrete action in history
+    setActionHistory(prev => [...prev, {
+      type: 'modify',
+      elementId: elementId,
+      previousState: previousElement
+    }]);
+    setRedoHistory([]);
   }, [elements]);
 
   const exportToPNG = useCallback(() => {
@@ -1438,6 +1523,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     data.elements.forEach(() => history.push({ type: 'element' }));
     data.fillAreas.forEach(() => history.push({ type: 'fill' }));
     setActionHistory(history);
+    setRedoHistory([]);
 
     // Notify parent of element count change
     if (onElementsChange) {
@@ -1456,7 +1542,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     return selectedElementId;
   }, [selectedElementId]);
 
-  const updateSelectedElement = useCallback((color: string, lineWidth: number) => {
+  const updateSelectedElement = useCallback((color: string, lineWidth: number, addToHistory: boolean = false, previousState?: GraphElement) => {
     if (selectedElementId === null || selectedElementId >= elements.length) {
       return;
     }
@@ -1468,9 +1554,6 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       return;
     }
 
-    // Save the previous state for undo
-    const previousElement = { ...currentElement };
-
     setElements(prev => {
       const newElements = [...prev];
       const element = { ...newElements[selectedElementId] };
@@ -1480,13 +1563,26 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       return newElements;
     });
 
-    // Add modification to action history
+    // Only add modification to action history if requested
+    if (addToHistory) {
+      const stateToSave = previousState || currentElement;
+      setActionHistory(prev => [...prev, {
+        type: 'modify',
+        elementId: selectedElementId,
+        previousState: stateToSave
+      }]);
+      setRedoHistory([]);
+    }
+  }, [selectedElementId, elements]);
+
+  const addModifyAction = useCallback((elementId: number, previousState: GraphElement) => {
     setActionHistory(prev => [...prev, {
       type: 'modify',
-      elementId: selectedElementId,
-      previousState: previousElement
+      elementId,
+      previousState
     }]);
-  }, [selectedElementId, elements]);
+    setRedoHistory([]);
+  }, []);
 
   // Expose methods via imperative handle
   useImperativeHandle(ref, () => ({
@@ -1495,15 +1591,17 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     addFunction,
     clearCanvas,
     undo,
+    redo,
     getElements: () => elements,
     exportToPNG,
     getSelectedElement,
     getSelectedElementId,
     updateSelectedElement,
+    addModifyAction,
     getExportData,
     importData,
     togglePointProjection
-  }), [addLineByCoordinates, addFillArea, addFunction, clearCanvas, undo, elements, exportToPNG, getSelectedElement, getSelectedElementId, updateSelectedElement, getExportData, importData, togglePointProjection]);
+  }), [addLineByCoordinates, addFillArea, addFunction, clearCanvas, undo, redo, elements, exportToPNG, getSelectedElement, getSelectedElementId, updateSelectedElement, addModifyAction, getExportData, importData, togglePointProjection]);
 
   return (
     <canvas

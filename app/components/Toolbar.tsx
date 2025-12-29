@@ -16,6 +16,7 @@ export interface ToolbarProps {
   onDrawModeChange: (mode: DrawMode) => void;
   onClear: () => void;
   onUndo: () => void;
+  onRedo: () => void;
   onExport: () => void;
   onExportJSON: () => void;
   onImportJSON: () => void;
@@ -40,6 +41,7 @@ export default function Toolbar({
   onDrawModeChange,
   onClear,
   onUndo,
+  onRedo,
   onExport,
   onExportJSON,
   onImportJSON
@@ -217,17 +219,30 @@ export default function Toolbar({
           >
             ↑ Import JSON
           </button>
-          <button
-            onClick={onUndo}
-            className="w-full px-4 py-2.5 rounded-md text-sm font-medium transition-all"
-            style={{
-              background: 'transparent',
-              color: 'var(--architect-blue)',
-              border: '1.5px solid var(--canvas-border)'
-            }}
-          >
-            ↺ Undo
-          </button>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={onUndo}
+              className="px-4 py-2.5 rounded-md text-sm font-medium transition-all"
+              style={{
+                background: 'transparent',
+                color: 'var(--architect-blue)',
+                border: '1.5px solid var(--canvas-border)'
+              }}
+            >
+              ↺ Undo
+            </button>
+            <button
+              onClick={onRedo}
+              className="px-4 py-2.5 rounded-md text-sm font-medium transition-all"
+              style={{
+                background: 'transparent',
+                color: 'var(--architect-blue)',
+                border: '1.5px solid var(--canvas-border)'
+              }}
+            >
+              ↻ Redo
+            </button>
+          </div>
           <button
             onClick={onClear}
             className="w-full px-4 py-2.5 rounded-md text-sm font-medium transition-all"

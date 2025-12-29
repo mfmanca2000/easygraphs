@@ -22,6 +22,7 @@ export default function Home() {
   const [selectedElement, setSelectedElement] = useState<GraphElement | null>(null);
   const [selectedElementId, setSelectedElementId] = useState<number | null>(null);
   const [elements, setElements] = useState<GraphElement[]>([]);
+  const originalElementRef = useRef<GraphElement | null>(null);
 
   // Responsive canvas sizing
   useEffect(() => {
@@ -51,12 +52,58 @@ export default function Home() {
     return () => window.removeEventListener('resize', updateCanvasSize);
   }, []);
 
-  // Apply stroke color and width changes to selected element
+  // Update toolbar to match selected element's properties and save original state
   useEffect(() => {
-    if (selectedElementId !== null && canvasRef.current) {
-      canvasRef.current.updateSelectedElement(strokeColor, strokeWidth);
+    if (selectedElement && selectedElementId !== null) {
+      setStrokeColor(selectedElement.color);
+      setStrokeWidth(selectedElement.lineWidth);
+      // Save original state when a new element is selected
+      originalElementRef.current = { ...selectedElement };
+    } else if (selectedElementId === null) {
+      // Selection cleared - finalize any pending edits
+      if (originalElementRef.current && canvasRef.current) {
+        const prevElementId = elements.findIndex(el =>
+          el.color === originalElementRef.current!.color &&
+          el.lineWidth === originalElementRef.current!.lineWidth
+        );
+        // Check if we need to add the final edit to history
+        // (this is handled when selection actually changes, not here)
+      }
+      originalElementRef.current = null;
     }
-  }, [strokeColor, strokeWidth, selectedElementId]);
+  }, [selectedElement, selectedElementId, elements]);
+
+  // Apply toolbar changes to selected element in real-time (without adding to history yet)
+  useEffect(() => {
+    if (selectedElementId !== null && canvasRef.current && selectedElement && originalElementRef.current) {
+      // Check if values actually changed from current element state
+      if (selectedElement.color !== strokeColor || selectedElement.lineWidth !== strokeWidth) {
+        // Apply change without adding to history
+        canvasRef.current.updateSelectedElement(strokeColor, strokeWidth, false);
+      }
+    }
+  }, [strokeColor, strokeWidth, selectedElementId, selectedElement]);
+
+  // When selection changes, finalize any edits by adding a single entry to history
+  const prevSelectedIdRef = useRef<number | null>(null);
+  useEffect(() => {
+    const prevId = prevSelectedIdRef.current;
+    prevSelectedIdRef.current = selectedElementId;
+
+    // If selection changed from a previous element
+    if (prevId !== null && prevId !== selectedElementId && originalElementRef.current && canvasRef.current) {
+      const elements = canvasRef.current.getElements();
+      if (prevId < elements.length) {
+        const currentState = elements[prevId];
+        // Check if the element was actually modified
+        if (currentState.color !== originalElementRef.current.color ||
+            currentState.lineWidth !== originalElementRef.current.lineWidth) {
+          // Add a single modify action for all the changes made to the previous element
+          canvasRef.current.addModifyAction(prevId, originalElementRef.current);
+        }
+      }
+    }
+  }, [selectedElementId]);
 
   const handleClear = () => {
     if (canvasRef.current) {
@@ -67,6 +114,12 @@ export default function Home() {
   const handleUndo = () => {
     if (canvasRef.current) {
       canvasRef.current.undo();
+    }
+  };
+
+  const handleRedo = () => {
+    if (canvasRef.current) {
+      canvasRef.current.redo();
     }
   };
 
@@ -234,6 +287,10 @@ export default function Home() {
       // Update the selected element to reflect the change
       const element = canvasRef.current.getSelectedElement();
       setSelectedElement(element);
+      // Update originalElementRef so the projection change isn't included in batched color/width changes
+      if (element) {
+        originalElementRef.current = { ...element };
+      }
     }
   };
 
@@ -277,6 +334,7 @@ export default function Home() {
               onDrawModeChange={setDrawMode}
               onClear={handleClear}
               onUndo={handleUndo}
+              onRedo={handleRedo}
               onExport={handleExport}
               onExportJSON={handleExportJSON}
               onImportJSON={handleImportJSON}
