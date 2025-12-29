@@ -105,7 +105,7 @@ export default function Toolbar({
                   border: `1.5px solid ${drawMode === mode ? 'var(--architect-blue)' : 'var(--canvas-border)'}`,
                 }}
               >
-                {mode === 'select' ? '⬚ Select' : mode}
+                {mode === 'select' ? '↖ Select' : mode}
               </button>
             ))}
           </div>
