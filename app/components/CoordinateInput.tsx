@@ -264,7 +264,7 @@ export default function CoordinateInput({ onAddLine, currentPoint, selectedEleme
                 </div>
                 {onTogglePointProjection && selectedElementId !== null && (
                   <button
-                    onClick={() => onTogglePointProjection(selectedElementId)}
+                    onClick={() => onTogglePointProjection(selectedElementId!)}
                     className="w-full mt-3 px-4 py-2.5 rounded-md text-sm font-medium transition-all"
                     style={{
                       background: selectedElement.showProjection ? 'var(--architect-orange)' : 'transparent',
