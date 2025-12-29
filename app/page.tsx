@@ -1,12 +1,14 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import GraphCanvas, { DrawMode, Point, GraphCanvasHandle, GraphElement, EasyGraphsExport } from './components/GraphCanvas';
+import GraphCanvas, { DrawMode, Point, GraphCanvasHandle, GraphElement, EasyGraphsExport, GraphLabels, DEFAULT_LABELS } from './components/GraphCanvas';
 import Toolbar from './components/Toolbar';
 import ScaleControls from './components/ScaleControls';
 import CoordinateInput from './components/CoordinateInput';
 import FillAreaControls from './components/FillAreaControls';
 import FunctionInput from './components/FunctionInput';
+import LabelControls from './components/LabelControls';
+import CharacterPalette from './components/CharacterPalette';
 
 export default function Home() {
   const canvasRef = useRef<GraphCanvasHandle>(null);
@@ -23,6 +25,8 @@ export default function Home() {
   const [selectedElementId, setSelectedElementId] = useState<number | null>(null);
   const [elements, setElements] = useState<GraphElement[]>([]);
   const originalElementRef = useRef<GraphElement | null>(null);
+  const [labels, setLabels] = useState<GraphLabels>(DEFAULT_LABELS);
+  const [showCharacterPalette, setShowCharacterPalette] = useState(false);
 
   // Responsive canvas sizing
   useEffect(() => {
@@ -176,7 +180,8 @@ export default function Home() {
       },
       drawing: {
         elements: canvasData.elements,
-        fillAreas: canvasData.fillAreas
+        fillAreas: canvasData.fillAreas,
+        labels: canvasData.labels
       },
       settings: {
         strokeColor,
@@ -228,9 +233,13 @@ export default function Home() {
           canvasRef.current.importData({
             elements: importData.drawing.elements,
             fillAreas: importData.drawing.fillAreas,
-            panOffset: importData.view.panOffset
+            panOffset: importData.view.panOffset,
+            labels: importData.drawing.labels || DEFAULT_LABELS
           });
         }
+
+        // Update page-level labels state
+        setLabels(importData.drawing.labels || DEFAULT_LABELS);
 
         // Update page-level state
         setScale(importData.view.scale);
@@ -292,6 +301,24 @@ export default function Home() {
         originalElementRef.current = { ...element };
       }
     }
+  };
+
+  const handleLabelsChange = (newLabels: GraphLabels, addToHistory: boolean = false) => {
+    setLabels(newLabels);
+    if (canvasRef.current) {
+      canvasRef.current.updateLabels(newLabels, addToHistory);
+    }
+  };
+
+  const handleTextBoxSelect = (id: string) => {
+    if (canvasRef.current) {
+      canvasRef.current.selectTextBox(id);
+    }
+  };
+
+  const handleCanvasLabelsChange = (newLabels: GraphLabels) => {
+    // Update page state when labels change from canvas interactions
+    setLabels(newLabels);
   };
 
   return (
@@ -406,6 +433,7 @@ export default function Home() {
                   onSelectionChange={handleSelectionChange}
                   onElementsChange={handleElementsChange}
                   onScaleChange={setScale}
+                  onLabelsChange={handleCanvasLabelsChange}
                 />
               </div>
 
@@ -477,6 +505,14 @@ export default function Home() {
               />
             )}
 
+            <LabelControls
+              labels={labels}
+              onLabelsChange={handleLabelsChange}
+              elements={elements}
+              onCharacterPaletteOpen={() => setShowCharacterPalette(true)}
+              onTextBoxSelect={handleTextBoxSelect}
+            />
+
             <FillAreaControls
               elementCount={elementCount}
               elements={elements}
@@ -542,6 +578,12 @@ export default function Home() {
           </div>
         </footer>
       </div>
+
+      {/* Character Palette Modal */}
+      <CharacterPalette
+        isOpen={showCharacterPalette}
+        onClose={() => setShowCharacterPalette(false)}
+      />
     </div>
   );
 }

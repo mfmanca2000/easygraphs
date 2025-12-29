@@ -4,12 +4,13 @@ import { useEffect, useRef, useState, useCallback, useImperativeHandle, forwardR
 import { flushSync } from 'react-dom';
 import { Parser } from 'expr-eval';
 
-export type DrawMode = 'line' | 'bezier' | 'freehand' | 'fill' | 'select' | 'function' | 'point';
+export type DrawMode = 'line' | 'bezier' | 'freehand' | 'fill' | 'select' | 'function' | 'point' | 'textbox';
 
 export type Action =
   | { type: 'element' }
   | { type: 'fill' }
-  | { type: 'modify'; elementId: number; previousState: GraphElement };
+  | { type: 'modify'; elementId: number; previousState: GraphElement }
+  | { type: 'label'; previousState: GraphLabels };
 
 export interface Point {
   x: number;
@@ -36,10 +37,90 @@ export interface FillArea {
   fillToAxis?: boolean; // If true, fill to axis instead of canvas edge
 }
 
+// Label coordinate system type
+export type LabelCoordinateSystem = 'graph' | 'canvas';
+
+// Axis labels
+export interface AxisLabels {
+  xLabel: string;
+  yLabel: string;
+  fontFamily: string;
+  fontSize: number;
+  color: string;
+}
+
+// Graph title
+export interface GraphTitle {
+  text: string;
+  fontFamily: string;
+  fontSize: number;
+  color: string;
+  yOffset: number; // Pixels from top
+}
+
+// Element label (attached to specific elements)
+export interface ElementLabel {
+  elementId: number;
+  text: string;
+  offsetX: number; // Offset from element reference point
+  offsetY: number;
+  fontFamily: string;
+  fontSize: number;
+  color: string;
+  anchorPoint?: 'start' | 'middle' | 'end';
+}
+
+// Text box (draggable/resizable)
+export interface TextBox {
+  id: string; // UUID
+  text: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  fontFamily: string;
+  fontSize: number;
+  color: string;
+  backgroundColor: string;
+  borderColor: string;
+  borderWidth: number;
+  padding: number;
+  coordinateSystem: LabelCoordinateSystem;
+}
+
+// Complete labels collection
+export interface GraphLabels {
+  axisLabels: AxisLabels;
+  title: GraphTitle;
+  elementLabels: ElementLabel[];
+  textBoxes: TextBox[];
+}
+
+// Default labels
+export const DEFAULT_LABELS: GraphLabels = {
+  axisLabels: {
+    xLabel: '',
+    yLabel: '',
+    fontFamily: 'JetBrains Mono, monospace',
+    fontSize: 14,
+    color: '#2B5F82'
+  },
+  title: {
+    text: '',
+    fontFamily: 'DM Sans, sans-serif',
+    fontSize: 20,
+    color: '#1A2332',
+    yOffset: 20
+  },
+  elementLabels: [],
+  textBoxes: []
+};
+
 export interface GraphExportData {
   elements: GraphElement[];
   fillAreas: FillArea[];
   panOffset: Point;
+  labels: GraphLabels;
 }
 
 export interface EasyGraphsExport {
@@ -61,6 +142,7 @@ export interface EasyGraphsExport {
   drawing: {
     elements: GraphElement[];
     fillAreas: FillArea[];
+    labels: GraphLabels;
   };
   settings: {
     strokeColor: string;
@@ -82,6 +164,7 @@ export interface GraphCanvasProps {
   onSelectionChange?: (elementId: number | null) => void;
   onElementsChange?: (elementCount: number) => void;
   onScaleChange?: (scale: { x: number; y: number }) => void;
+  onLabelsChange?: (labels: GraphLabels) => void;
 }
 
 export interface GraphCanvasHandle {
@@ -100,6 +183,11 @@ export interface GraphCanvasHandle {
   getExportData: () => GraphExportData;
   importData: (data: GraphExportData) => void;
   togglePointProjection: (elementId: number) => void;
+  getLabels: () => GraphLabels;
+  updateLabels: (newLabels: GraphLabels, addToHistory?: boolean) => void;
+  addTextBox: (textBox: TextBox) => void;
+  deleteTextBox: (id: string) => void;
+  selectTextBox: (id: string) => void;
 }
 
 const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function GraphCanvasComponent(props, ref) {
@@ -115,7 +203,8 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     onCoordinateClick,
     onSelectionChange,
     onElementsChange,
-    onScaleChange
+    onScaleChange,
+    onLabelsChange
   } = props;
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -144,41 +233,64 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
   // Ref to prevent duplicate undo operations
   const undoInProgressRef = useRef(false);
 
+  // Label state
+  const [labels, setLabels] = useState<GraphLabels>(DEFAULT_LABELS);
+  const [selectedTextBoxId, setSelectedTextBoxId] = useState<string | null>(null);
+  const [draggingTextBox, setDraggingTextBox] = useState<string | null>(null);
+  const [resizingTextBox, setResizingTextBox] = useState<{
+    id: string;
+    corner: 'ne' | 'se' | 'sw' | 'nw';
+  } | null>(null);
+  const [textBoxDragOffset, setTextBoxDragOffset] = useState<Point>({ x: 0, y: 0 });
+  const [selectedElementLabelIndex, setSelectedElementLabelIndex] = useState<number | null>(null);
+  const [draggingElementLabel, setDraggingElementLabel] = useState<number | null>(null);
+  const labelsDragStartRef = useRef<GraphLabels | null>(null);
+
+  // Calculate title offset (space reserved at top for title)
+  const getTitleOffset = useCallback((): number => {
+    if (!labels.title.text) return 0;
+    // Reserve space: yOffset + fontSize + bottom padding
+    return labels.title.yOffset + labels.title.fontSize + 20;
+  }, [labels.title]);
+
   // Convert canvas coordinates to graph coordinates
   const canvasToGraph = useCallback((canvasX: number, canvasY: number): Point => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
 
+    const titleOffset = getTitleOffset();
     const centerX = canvas.width / 2 + panOffset.x;
-    const centerY = canvas.height / 2 + panOffset.y;
+    const centerY = (canvas.height + titleOffset) / 2 + panOffset.y;
 
     return {
       x: ((canvasX - centerX) / scale.x),
       y: ((centerY - canvasY) / scale.y)
     };
-  }, [scale, panOffset]);
+  }, [scale, panOffset, getTitleOffset]);
 
   // Convert graph coordinates to canvas coordinates
   const graphToCanvas = useCallback((graphX: number, graphY: number): Point => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
 
+    const titleOffset = getTitleOffset();
     const centerX = canvas.width / 2 + panOffset.x;
-    const centerY = canvas.height / 2 + panOffset.y;
+    const centerY = (canvas.height + titleOffset) / 2 + panOffset.y;
 
     return {
       x: centerX + graphX * scale.x,
       y: centerY - graphY * scale.y
     };
-  }, [scale, panOffset]);
+  }, [scale, panOffset, getTitleOffset]);
 
   // Draw grid
   const drawGrid = useCallback((ctx: CanvasRenderingContext2D) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
+    const titleOffset = getTitleOffset();
     const centerX = canvas.width / 2 + panOffset.x;
-    const centerY = canvas.height / 2 + panOffset.y;
+    const centerY = (canvas.height + titleOffset) / 2 + panOffset.y;
 
     // Draw grid lines if enabled
     if (showGrid) {
@@ -188,25 +300,27 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       // Calculate visible graph coordinate range
       const leftEdge = (0 - centerX) / scale.x;
       const rightEdge = (canvas.width - centerX) / scale.x;
-      const topEdge = (centerY - 0) / scale.y;
+      const topEdge = (centerY - titleOffset) / scale.y;
       const bottomEdge = (centerY - canvas.height) / scale.y;
 
-      // Draw vertical grid lines
+      // Draw vertical grid lines (only in graph area, below title)
       for (let i = Math.floor(leftEdge); i <= Math.ceil(rightEdge); i++) {
         const x = centerX + i * scale.x;
         ctx.beginPath();
-        ctx.moveTo(x, 0);
+        ctx.moveTo(x, titleOffset);
         ctx.lineTo(x, canvas.height);
         ctx.stroke();
       }
 
-      // Draw horizontal grid lines
+      // Draw horizontal grid lines (only in graph area, below title)
       for (let i = Math.floor(bottomEdge); i <= Math.ceil(topEdge); i++) {
         const y = centerY - i * scale.y;
-        ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(canvas.width, y);
-        ctx.stroke();
+        if (y >= titleOffset) { // Only draw if below title area
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          ctx.lineTo(canvas.width, y);
+          ctx.stroke();
+        }
       }
     }
 
@@ -215,14 +329,16 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     ctx.lineWidth = 2;
 
     // X-axis
-    ctx.beginPath();
-    ctx.moveTo(0, centerY);
-    ctx.lineTo(canvas.width, centerY);
-    ctx.stroke();
+    if (centerY >= titleOffset) { // Only draw if below title area
+      ctx.beginPath();
+      ctx.moveTo(0, centerY);
+      ctx.lineTo(canvas.width, centerY);
+      ctx.stroke();
+    }
 
-    // Y-axis
+    // Y-axis (only in graph area, below title)
     ctx.beginPath();
-    ctx.moveTo(centerX, 0);
+    ctx.moveTo(centerX, titleOffset);
     ctx.lineTo(centerX, canvas.height);
     ctx.stroke();
 
@@ -278,7 +394,287 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       ctx.textBaseline = 'top';
       ctx.fillText('0', centerX - 5, centerY + 5);
     }
-  }, [showGrid, showAxisUnits, scale, panOffset]);
+  }, [showGrid, showAxisUnits, scale, panOffset, getTitleOffset]);
+
+  // Helper function to wrap text to fit within a given width
+  const wrapText = useCallback((ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] => {
+    const words = text.split(' ');
+    const lines: string[] = [];
+    let currentLine = words[0];
+
+    for (let i = 1; i < words.length; i++) {
+      const word = words[i];
+      const width = ctx.measureText(currentLine + ' ' + word).width;
+      if (width < maxWidth) {
+        currentLine += ' ' + word;
+      } else {
+        lines.push(currentLine);
+        currentLine = word;
+      }
+    }
+    lines.push(currentLine);
+    return lines;
+  }, []);
+
+  // Render all labels (axis labels, title, element labels, text boxes)
+  const renderLabels = useCallback((ctx: CanvasRenderingContext2D) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const titleOffset = getTitleOffset();
+
+    // 1. Graph title (drawn in the reserved area at the top)
+    if (labels.title.text) {
+      ctx.save();
+      ctx.fillStyle = labels.title.color;
+      ctx.font = `bold ${labels.title.fontSize}px ${labels.title.fontFamily}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.fillText(labels.title.text, canvas.width / 2, labels.title.yOffset);
+      ctx.restore();
+    }
+
+    // 2. Axis labels (positioned relative to the axes)
+    const centerX = canvas.width / 2 + panOffset.x;
+    const centerY = (canvas.height + titleOffset) / 2 + panOffset.y;
+
+    if (labels.axisLabels.xLabel && centerY >= titleOffset && centerY <= canvas.height) {
+      ctx.save();
+      ctx.fillStyle = labels.axisLabels.color;
+      ctx.font = `${labels.axisLabels.fontSize}px ${labels.axisLabels.fontFamily}`;
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'top';
+      // Position to the right of the X-axis, below the axis units
+      ctx.fillText(labels.axisLabels.xLabel, canvas.width - 10, centerY + 20);
+      ctx.restore();
+    }
+
+    if (labels.axisLabels.yLabel && centerX >= 0 && centerX <= canvas.width) {
+      ctx.save();
+      ctx.fillStyle = labels.axisLabels.color;
+      ctx.font = `${labels.axisLabels.fontSize}px ${labels.axisLabels.fontFamily}`;
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'bottom';
+      // Position at the top of the Y-axis, to the left of the axis units
+      ctx.translate(centerX - 20, titleOffset + 10);
+      ctx.rotate(-Math.PI / 2);
+      ctx.fillText(labels.axisLabels.yLabel, 0, 0);
+      ctx.restore();
+    }
+
+    // 3. Element labels
+    labels.elementLabels.forEach((label, index) => {
+      const element = elements[label.elementId];
+      if (!element) return;
+
+      let refPoint: Point;
+      // Determine reference point based on element type
+      if (element.type === 'point') {
+        refPoint = element.points[0];
+      } else if (element.type === 'line' || element.type === 'bezier') {
+        refPoint = {
+          x: (element.points[0].x + element.points[1].x) / 2,
+          y: (element.points[0].y + element.points[1].y) / 2
+        };
+      } else {
+        refPoint = element.points[Math.floor(element.points.length / 2)];
+      }
+
+      const canvasPoint = graphToCanvas(refPoint.x, refPoint.y);
+      const labelX = canvasPoint.x + label.offsetX;
+      const labelY = canvasPoint.y + label.offsetY;
+
+      ctx.save();
+
+      // Show selection highlight if this label is selected
+      if (selectedElementLabelIndex === index) {
+        ctx.font = `${label.fontSize}px ${label.fontFamily}`;
+        const textMetrics = ctx.measureText(label.text);
+        const textWidth = textMetrics.width;
+        const textHeight = label.fontSize;
+
+        // Draw background
+        ctx.fillStyle = 'rgba(230, 126, 34, 0.2)';
+        ctx.fillRect(labelX - 2, labelY - textHeight - 2, textWidth + 4, textHeight + 4);
+
+        // Draw border
+        ctx.strokeStyle = '#E67E22';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(labelX - 2, labelY - textHeight - 2, textWidth + 4, textHeight + 4);
+      }
+
+      ctx.fillStyle = label.color;
+      ctx.font = `${label.fontSize}px ${label.fontFamily}`;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(label.text, labelX, labelY);
+      ctx.restore();
+    });
+
+    // 4. Text boxes
+    labels.textBoxes.forEach(textBox => {
+      let x = textBox.x;
+      let y = textBox.y;
+
+      if (textBox.coordinateSystem === 'graph') {
+        const canvasPoint = graphToCanvas(textBox.x, textBox.y);
+        x = canvasPoint.x;
+        y = canvasPoint.y;
+      }
+
+      // Selection highlight if selected
+      if (selectedTextBoxId === textBox.id) {
+        ctx.fillStyle = 'rgba(230, 126, 34, 0.2)';
+        ctx.fillRect(x - 4, y - 4, textBox.width + 8, textBox.height + 8);
+        ctx.strokeStyle = '#E67E22';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(x - 4, y - 4, textBox.width + 8, textBox.height + 8);
+      }
+
+      // Background
+      ctx.fillStyle = textBox.backgroundColor;
+      ctx.fillRect(x, y, textBox.width, textBox.height);
+
+      // Border
+      ctx.strokeStyle = textBox.borderColor;
+      ctx.lineWidth = textBox.borderWidth;
+      ctx.strokeRect(x, y, textBox.width, textBox.height);
+
+      // Text with wrapping
+      ctx.fillStyle = textBox.color;
+      ctx.font = `${textBox.fontSize}px ${textBox.fontFamily}`;
+      ctx.textBaseline = 'top';
+      ctx.textAlign = 'left';
+
+      const lines = wrapText(ctx, textBox.text, textBox.width - textBox.padding * 2);
+      const lineHeight = textBox.fontSize * 1.2;
+
+      lines.forEach((line, i) => {
+        ctx.fillText(line, x + textBox.padding, y + textBox.padding + i * lineHeight);
+      });
+
+      // Resize handles if selected
+      if (selectedTextBoxId === textBox.id) {
+        const handleSize = 8;
+        ctx.fillStyle = '#E67E22';
+        ctx.strokeStyle = '#FFFFFF';
+        ctx.lineWidth = 2;
+
+        const corners = [
+          { x, y },
+          { x: x + textBox.width, y },
+          { x: x + textBox.width, y: y + textBox.height },
+          { x, y: y + textBox.height }
+        ];
+
+        corners.forEach(corner => {
+          ctx.beginPath();
+          ctx.arc(corner.x, corner.y, handleSize, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+        });
+      }
+    });
+  }, [labels, elements, graphToCanvas, selectedTextBoxId, wrapText, getTitleOffset, panOffset, selectedElementLabelIndex]);
+
+  // Helper function to check if a point is inside a text box
+  const isPointInTextBox = useCallback((canvasX: number, canvasY: number, textBox: TextBox): boolean => {
+    let x = textBox.x;
+    let y = textBox.y;
+    if (textBox.coordinateSystem === 'graph') {
+      const canvasPoint = graphToCanvas(textBox.x, textBox.y);
+      x = canvasPoint.x;
+      y = canvasPoint.y;
+    }
+    return canvasX >= x && canvasX <= x + textBox.width &&
+           canvasY >= y && canvasY <= y + textBox.height;
+  }, [graphToCanvas]);
+
+  // Helper function to get which resize handle is being clicked
+  const getResizeHandle = useCallback((canvasX: number, canvasY: number, textBox: TextBox): 'ne' | 'se' | 'sw' | 'nw' | null => {
+    let x = textBox.x;
+    let y = textBox.y;
+    if (textBox.coordinateSystem === 'graph') {
+      const canvasPoint = graphToCanvas(textBox.x, textBox.y);
+      x = canvasPoint.x;
+      y = canvasPoint.y;
+    }
+
+    const handleSize = 8;
+    const corners = [
+      { corner: 'nw' as const, x, y },
+      { corner: 'ne' as const, x: x + textBox.width, y },
+      { corner: 'se' as const, x: x + textBox.width, y: y + textBox.height },
+      { corner: 'sw' as const, x, y: y + textBox.height }
+    ];
+
+    for (const { corner, x: cx, y: cy } of corners) {
+      const distance = Math.sqrt((canvasX - cx) ** 2 + (canvasY - cy) ** 2);
+      if (distance <= handleSize) return corner;
+    }
+    return null;
+  }, [graphToCanvas]);
+
+  // Helper function to find which text box was clicked
+  const findClickedTextBox = useCallback((canvasX: number, canvasY: number): string | null => {
+    // Iterate in reverse order to prioritize top-most text boxes
+    for (let i = labels.textBoxes.length - 1; i >= 0; i--) {
+      if (isPointInTextBox(canvasX, canvasY, labels.textBoxes[i])) {
+        return labels.textBoxes[i].id;
+      }
+    }
+    return null;
+  }, [labels.textBoxes, isPointInTextBox]);
+
+  // Helper function to check if a point is inside an element label
+  const isPointInElementLabel = useCallback((canvasX: number, canvasY: number, label: ElementLabel, index: number): boolean => {
+    const element = elements[label.elementId];
+    if (!element) return false;
+
+    let refPoint: Point;
+    // Determine reference point based on element type
+    if (element.type === 'point') {
+      refPoint = element.points[0];
+    } else if (element.type === 'line' || element.type === 'bezier') {
+      refPoint = {
+        x: (element.points[0].x + element.points[1].x) / 2,
+        y: (element.points[0].y + element.points[1].y) / 2
+      };
+    } else {
+      refPoint = element.points[Math.floor(element.points.length / 2)];
+    }
+
+    const canvasPoint = graphToCanvas(refPoint.x, refPoint.y);
+    const labelX = canvasPoint.x + label.offsetX;
+    const labelY = canvasPoint.y + label.offsetY;
+
+    // Create a temporary canvas context to measure text
+    const canvas = canvasRef.current;
+    if (!canvas) return false;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return false;
+
+    ctx.font = `${label.fontSize}px ${label.fontFamily}`;
+    const textMetrics = ctx.measureText(label.text);
+    const textWidth = textMetrics.width;
+    const textHeight = label.fontSize;
+
+    return canvasX >= labelX - 2 &&
+           canvasX <= labelX + textWidth + 2 &&
+           canvasY >= labelY - textHeight - 2 &&
+           canvasY <= labelY + 2;
+  }, [elements, graphToCanvas]);
+
+  // Helper function to find which element label was clicked
+  const findClickedElementLabel = useCallback((canvasX: number, canvasY: number): number | null => {
+    // Iterate in reverse order to prioritize top-most labels
+    for (let i = labels.elementLabels.length - 1; i >= 0; i--) {
+      if (isPointInElementLabel(canvasX, canvasY, labels.elementLabels[i], i)) {
+        return i;
+      }
+    }
+    return null;
+  }, [labels.elementLabels, isPointInElementLabel]);
 
   // Draw a line element
   const drawLine = useCallback((ctx: CanvasRenderingContext2D, element: GraphElement) => {
@@ -509,7 +905,8 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const centerY = canvas.height / 2 + panOffset.y;
+    const titleOffset = getTitleOffset();
+    const centerY = (canvas.height + titleOffset) / 2 + panOffset.y;
 
     // Save canvas state for clipping
     ctx.save();
@@ -628,7 +1025,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
 
     // Restore canvas state (remove clipping and reset globalAlpha)
     ctx.restore();
-  }, [elements, graphToCanvas, panOffset, simplifyPoints]);
+  }, [elements, graphToCanvas, panOffset, simplifyPoints, getTitleOffset]);
 
   // Render everything
   const render = useCallback(() => {
@@ -748,6 +1145,9 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       ctx.stroke();
     }
 
+    // Render all labels
+    renderLabels(ctx);
+
     // Draw selection highlights
     if (selectedElementId !== null && selectedElementId < elements.length) {
       const selectedElement = elements[selectedElementId];
@@ -837,7 +1237,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
         ctx.stroke();
       }
     }
-  }, [drawGrid, elements, fillAreas, currentPoints, tempControlPoint, isDrawing, drawMode, strokeColor, strokeWidth, graphToCanvas, drawLine, drawBezier, drawFreehand, drawPoint, fillAreaForElement, selectedElementId, simplifyPoints]);
+  }, [drawGrid, elements, fillAreas, currentPoints, tempControlPoint, isDrawing, drawMode, strokeColor, strokeWidth, graphToCanvas, drawLine, drawBezier, drawFreehand, drawPoint, drawFunction, fillAreaForElement, selectedElementId, simplifyPoints, renderLabels]);
 
   // Re-render when dependencies change
   useEffect(() => {
@@ -859,9 +1259,12 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       const canvasX = e.clientX - rect.left;
       const canvasY = e.clientY - rect.top;
 
+      // Calculate title offset
+      const titleOffset = getTitleOffset();
+
       // Get current center with offset
       const centerX = canvas.width / 2 + panOffset.x;
-      const centerY = canvas.height / 2 + panOffset.y;
+      const centerY = (canvas.height + titleOffset) / 2 + panOffset.y;
 
       // Calculate graph coordinates of mouse position (before zoom)
       const graphX = (canvasX - centerX) / scale.x;
@@ -876,7 +1279,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
 
       // Calculate new offset to keep the graph point under mouse cursor
       const newOffsetX = canvasX - graphX * newScaleX - canvas.width / 2;
-      const newOffsetY2 = canvasY + graphY * newScaleY - canvas.height / 2;
+      const newOffsetY2 = canvasY + graphY * newScaleY - (canvas.height + titleOffset) / 2;
 
       // Update scale via callback
       onScaleChange({ x: newScaleX, y: newScaleY });
@@ -890,7 +1293,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     return () => {
       canvas.removeEventListener('wheel', wheelHandler);
     };
-  }, [scale, panOffset, onScaleChange]);
+  }, [scale, panOffset, onScaleChange, getTitleOffset]);
 
   // Notify parent when selection changes or when selected element's data changes
   useEffect(() => {
@@ -1180,6 +1583,118 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       return;
     }
 
+    // Handle text box mode
+    if (drawMode === 'textbox') {
+      const clickedTextBoxId = findClickedTextBox(canvasX, canvasY);
+
+      if (clickedTextBoxId) {
+        const textBox = labels.textBoxes.find(tb => tb.id === clickedTextBoxId);
+        if (textBox) {
+          const handle = getResizeHandle(canvasX, canvasY, textBox);
+          if (handle) {
+            setResizingTextBox({ id: clickedTextBoxId, corner: handle });
+            return;
+          }
+
+          setSelectedTextBoxId(clickedTextBoxId);
+          setDraggingTextBox(clickedTextBoxId);
+          let x = textBox.x;
+          let y = textBox.y;
+          if (textBox.coordinateSystem === 'graph') {
+            const cp = graphToCanvas(textBox.x, textBox.y);
+            x = cp.x;
+            y = cp.y;
+          }
+          setTextBoxDragOffset({ x: canvasX - x, y: canvasY - y });
+          return;
+        }
+      } else {
+        // Click on empty area
+        if (selectedTextBoxId !== null) {
+          // If a text box is already selected, deselect it
+          setSelectedTextBoxId(null);
+        } else {
+          // If no text box is selected, create a new one
+          const newTextBox: TextBox = {
+            id: crypto.randomUUID(),
+            text: 'New Text Box',
+            x: canvasX - 100, // Center the 200px wide box at click position
+            y: canvasY - 50,  // Center the 100px tall box at click position
+            width: 200,
+            height: 100,
+            fontFamily: 'DM Sans, sans-serif',
+            fontSize: 14,
+            color: '#1A2332',
+            backgroundColor: 'rgba(255, 255, 255, 0.9)',
+            borderColor: '#2B5F82',
+            borderWidth: 2,
+            padding: 10,
+            coordinateSystem: 'canvas'
+          };
+
+          const previousLabels = { ...labels };
+          const updatedLabels = {
+            ...labels,
+            textBoxes: [...labels.textBoxes, newTextBox]
+          };
+          setLabels(updatedLabels);
+          setActionHistory(prev => [...prev, {
+            type: 'label',
+            previousState: previousLabels
+          }]);
+          setRedoHistory([]);
+          setSelectedTextBoxId(newTextBox.id);
+
+          // Notify parent component
+          if (onLabelsChange) {
+            onLabelsChange(updatedLabels);
+          }
+        }
+        return;
+      }
+    }
+
+    // Check for text box clicks in select mode
+    if (drawMode === 'select') {
+      const clickedTextBoxId = findClickedTextBox(canvasX, canvasY);
+      if (clickedTextBoxId) {
+        const textBox = labels.textBoxes.find(tb => tb.id === clickedTextBoxId);
+        if (textBox) {
+          const handle = getResizeHandle(canvasX, canvasY, textBox);
+          if (handle) {
+            setResizingTextBox({ id: clickedTextBoxId, corner: handle });
+            setSelectedTextBoxId(clickedTextBoxId);
+            return;
+          }
+
+          setSelectedTextBoxId(clickedTextBoxId);
+          setDraggingTextBox(clickedTextBoxId);
+          let x = textBox.x;
+          let y = textBox.y;
+          if (textBox.coordinateSystem === 'graph') {
+            const cp = graphToCanvas(textBox.x, textBox.y);
+            x = cp.x;
+            y = cp.y;
+          }
+          setTextBoxDragOffset({ x: canvasX - x, y: canvasY - y });
+          return;
+        }
+      }
+    }
+
+    // Check for element label clicks (works in all modes)
+    const clickedElementLabelIndex = findClickedElementLabel(canvasX, canvasY);
+    if (clickedElementLabelIndex !== null) {
+      setSelectedElementLabelIndex(clickedElementLabelIndex);
+      setDraggingElementLabel(clickedElementLabelIndex);
+      // Save current labels state for undo
+      labelsDragStartRef.current = { ...labels };
+      return;
+    } else if (drawMode !== 'textbox') {
+      // Clear element label selection if clicking elsewhere (but not in textbox mode)
+      setSelectedElementLabelIndex(null);
+    }
+
     if (drawMode === 'select' && selectedElementId !== null) {
       // Check if clicking on a control point of selected element
       const clickedPoint = findClickedPoint(canvasX, canvasY, selectedElementId);
@@ -1223,6 +1738,112 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       return;
     }
 
+    // Handle text box dragging
+    if (draggingTextBox) {
+      setLabels(prev => ({
+        ...prev,
+        textBoxes: prev.textBoxes.map(tb =>
+          tb.id === draggingTextBox
+            ? { ...tb, x: canvasX - textBoxDragOffset.x, y: canvasY - textBoxDragOffset.y, coordinateSystem: 'canvas' as const }
+            : tb
+        )
+      }));
+      return;
+    }
+
+    // Handle text box resizing
+    if (resizingTextBox) {
+      const textBox = labels.textBoxes.find(tb => tb.id === resizingTextBox.id);
+      if (textBox) {
+        let x = textBox.x;
+        let y = textBox.y;
+        if (textBox.coordinateSystem === 'graph') {
+          const cp = graphToCanvas(textBox.x, textBox.y);
+          x = cp.x;
+          y = cp.y;
+        }
+
+        let newX = x;
+        let newY = y;
+        let newW = textBox.width;
+        let newH = textBox.height;
+
+        switch (resizingTextBox.corner) {
+          case 'nw':
+            newX = canvasX;
+            newY = canvasY;
+            newW += x - canvasX;
+            newH += y - canvasY;
+            break;
+          case 'ne':
+            newY = canvasY;
+            newW = canvasX - x;
+            newH += y - canvasY;
+            break;
+          case 'se':
+            newW = canvasX - x;
+            newH = canvasY - y;
+            break;
+          case 'sw':
+            newX = canvasX;
+            newW += x - canvasX;
+            newH = canvasY - y;
+            break;
+        }
+
+        newW = Math.max(50, newW);
+        newH = Math.max(30, newH);
+
+        setLabels(prev => ({
+          ...prev,
+          textBoxes: prev.textBoxes.map(tb =>
+            tb.id === resizingTextBox.id
+              ? { ...tb, x: newX, y: newY, width: newW, height: newH, coordinateSystem: 'canvas' as const }
+              : tb
+          )
+        }));
+      }
+      return;
+    }
+
+    // Handle element label dragging
+    if (draggingElementLabel !== null) {
+      const label = labels.elementLabels[draggingElementLabel];
+      if (label) {
+        const element = elements[label.elementId];
+        if (element) {
+          let refPoint: Point;
+          // Determine reference point based on element type
+          if (element.type === 'point') {
+            refPoint = element.points[0];
+          } else if (element.type === 'line' || element.type === 'bezier') {
+            refPoint = {
+              x: (element.points[0].x + element.points[1].x) / 2,
+              y: (element.points[0].y + element.points[1].y) / 2
+            };
+          } else {
+            refPoint = element.points[Math.floor(element.points.length / 2)];
+          }
+
+          const canvasPoint = graphToCanvas(refPoint.x, refPoint.y);
+
+          // Calculate new offset
+          const newOffsetX = canvasX - canvasPoint.x;
+          const newOffsetY = canvasY - canvasPoint.y;
+
+          setLabels(prev => ({
+            ...prev,
+            elementLabels: prev.elementLabels.map((lbl, idx) =>
+              idx === draggingElementLabel
+                ? { ...lbl, offsetX: newOffsetX, offsetY: newOffsetY }
+                : lbl
+            )
+          }));
+        }
+      }
+      return;
+    }
+
     const point = getEventPoint(e);
 
     if (drawMode === 'select' && selectedElementId !== null) {
@@ -1261,6 +1882,36 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       setIsPanning(false);
       setPanStart(null);
       justPannedRef.current = true;
+      return;
+    }
+
+    // Handle text box drag/resize completion
+    if (draggingTextBox || resizingTextBox) {
+      setActionHistory(prev => [...prev, { type: 'label', previousState: labels }]);
+      setRedoHistory([]);
+      setDraggingTextBox(null);
+      setResizingTextBox(null);
+
+      // Notify parent component
+      if (onLabelsChange) {
+        onLabelsChange(labels);
+      }
+      return;
+    }
+
+    // Handle element label drag completion
+    if (draggingElementLabel !== null) {
+      if (labelsDragStartRef.current) {
+        setActionHistory(prev => [...prev, { type: 'label', previousState: labelsDragStartRef.current! }]);
+        setRedoHistory([]);
+        labelsDragStartRef.current = null;
+      }
+      setDraggingElementLabel(null);
+
+      // Notify parent component
+      if (onLabelsChange) {
+        onLabelsChange(labels);
+      }
       return;
     }
 
@@ -1461,12 +2112,21 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
             previousState: currentState
           }]);
         }
+      } else if (lastAction.type === 'label') {
+        const currentLabels = { ...labels };
+        setLabels(lastAction.previousState);
+
+        // Add to redo history
+        setRedoHistory(prev => [...prev, {
+          type: 'label',
+          previousState: currentLabels
+        }]);
       }
     });
 
     // Reset the flag
     undoInProgressRef.current = false;
-  }, [actionHistory, elements, fillAreas, selectedElementId]);
+  }, [actionHistory, elements, fillAreas, selectedElementId, labels]);
 
   const redo = useCallback(() => {
     if (redoHistory.length === 0) {
@@ -1507,9 +2167,17 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
             previousState: currentState
           }]);
         }
+      } else if (lastRedoAction.type === 'label') {
+        const labelAction = lastRedoAction as Action & { previousState: GraphLabels };
+        const currentLabels = { ...labels };
+        setLabels(labelAction.previousState);
+        setActionHistory(prev => [...prev, {
+          type: 'label',
+          previousState: currentLabels
+        }]);
       }
     });
-  }, [redoHistory, elements]);
+  }, [redoHistory, elements, labels]);
 
   const togglePointProjection = useCallback((elementId: number) => {
     if (elementId < 0 || elementId >= elements.length) return;
@@ -1558,9 +2226,10 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     return {
       elements: [...elements],
       fillAreas: [...fillAreas],
-      panOffset: { ...panOffset }
+      panOffset: { ...panOffset },
+      labels: { ...labels }
     };
-  }, [elements, fillAreas, panOffset]);
+  }, [elements, fillAreas, panOffset, labels]);
 
   const importData = useCallback((data: GraphExportData) => {
     // Clear current state
@@ -1574,6 +2243,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     setElements(data.elements || []);
     setFillAreas(data.fillAreas || []);
     setPanOffset(data.panOffset || { x: 0, y: 0 });
+    setLabels(data.labels || DEFAULT_LABELS); // Backward compatibility
 
     // Rebuild action history for undo functionality
     const history: Action[] = [];
@@ -1641,6 +2311,63 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     setRedoHistory([]);
   }, []);
 
+  const getLabels = useCallback(() => {
+    return labels;
+  }, [labels]);
+
+  const updateLabels = useCallback((newLabels: GraphLabels, addToHistory: boolean = false) => {
+    if (addToHistory) {
+      setActionHistory(prev => [...prev, {
+        type: 'label',
+        previousState: labels
+      }]);
+      setRedoHistory([]);
+    }
+    setLabels(newLabels);
+  }, [labels]);
+
+  const addTextBox = useCallback((textBox: TextBox) => {
+    const previousLabels = { ...labels };
+    const updatedLabels = {
+      ...labels,
+      textBoxes: [...labels.textBoxes, textBox]
+    };
+    setLabels(updatedLabels);
+    setActionHistory(prev => [...prev, {
+      type: 'label',
+      previousState: previousLabels
+    }]);
+    setRedoHistory([]);
+
+    // Notify parent component
+    if (onLabelsChange) {
+      onLabelsChange(updatedLabels);
+    }
+  }, [labels, onLabelsChange]);
+
+  const deleteTextBox = useCallback((id: string) => {
+    const previousLabels = { ...labels };
+    const updatedLabels = {
+      ...labels,
+      textBoxes: labels.textBoxes.filter(tb => tb.id !== id)
+    };
+    setLabels(updatedLabels);
+    setActionHistory(prev => [...prev, {
+      type: 'label',
+      previousState: previousLabels
+    }]);
+    setRedoHistory([]);
+
+    // Notify parent component
+    if (onLabelsChange) {
+      onLabelsChange(updatedLabels);
+    }
+  }, [labels, onLabelsChange]);
+
+  const selectTextBox = useCallback((id: string) => {
+    setSelectedTextBoxId(id);
+  }, []);
+
   // Expose methods via imperative handle
   useImperativeHandle(ref, () => ({
     addLineByCoordinates,
@@ -1657,8 +2384,13 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     addModifyAction,
     getExportData,
     importData,
-    togglePointProjection
-  }), [addLineByCoordinates, addFillArea, addFunction, clearCanvas, undo, redo, elements, exportToPNG, getSelectedElement, getSelectedElementId, updateSelectedElement, addModifyAction, getExportData, importData, togglePointProjection]);
+    togglePointProjection,
+    getLabels,
+    updateLabels,
+    addTextBox,
+    deleteTextBox,
+    selectTextBox
+  }), [addLineByCoordinates, addFillArea, addFunction, clearCanvas, undo, redo, elements, exportToPNG, getSelectedElement, getSelectedElementId, updateSelectedElement, addModifyAction, getExportData, importData, togglePointProjection, getLabels, updateLabels, addTextBox, deleteTextBox, selectTextBox]);
 
   return (
     <canvas
