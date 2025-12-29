@@ -1,26 +1,264 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Technical Drawing Palette */
+  --graph-paper: #F8FBFD;
+  --graph-lines: #D4E4EC;
+  --pencil-lead: #1A2332;
+  --architect-blue: #2B5F82;
+  --architect-orange: #E67E22;
+  --architect-red: #E74C3C;
+  --architect-green: #27AE60;
+  --subtle-shadow: rgba(43, 95, 130, 0.08);
+  --canvas-border: #B8D4E6;
+
+  --background: var(--graph-paper);
+  --foreground: var(--pencil-lead);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: 'Consolas', 'Monaco', 'Courier New', monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  body {
+    background: var(--graph-paper) !important;
+    color: var(--pencil-lead) !important;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    position: relative;
+    overflow-x: hidden;
+  }
+
+  /* Graph paper background effect */
+  body::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-image:
+      linear-gradient(var(--graph-lines) 1px, transparent 1px),
+      linear-gradient(90deg, var(--graph-lines) 1px, transparent 1px);
+    background-size: 20px 20px;
+    opacity: 0.4;
+    pointer-events: none;
+    z-index: 0;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer components {
+  /* Entrance animations */
+  @keyframes fadeInUp {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes slideInLeft {
+    from {
+      opacity: 0;
+      transform: translateX(-30px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  @keyframes slideInRight {
+    from {
+      opacity: 0;
+      transform: translateX(30px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  .animate-fadeInUp {
+    animation: fadeInUp 0.6s ease-out forwards;
+  }
+
+  .animate-fadeIn {
+    animation: fadeIn 0.8s ease-out forwards;
+  }
+
+  .animate-slideInLeft {
+    animation: slideInLeft 0.7s ease-out forwards;
+  }
+
+  .animate-slideInRight {
+    animation: slideInRight 0.7s ease-out forwards;
+  }
+
+  /* Staggered delays for orchestrated entrance */
+  .delay-100 { animation-delay: 0.1s; opacity: 0; }
+  .delay-200 { animation-delay: 0.2s; opacity: 0; }
+  .delay-300 { animation-delay: 0.3s; opacity: 0; }
+  .delay-400 { animation-delay: 0.4s; opacity: 0; }
+
+  /* Custom scrollbar for technical aesthetic */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: var(--graph-lines);
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--architect-blue);
+    border-radius: 4px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--pencil-lead);
+  }
+
+  /* Range input styling */
+  input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+    cursor: pointer;
+    width: 100%;
+    height: 24px;
+  }
+
+  input[type="range"]::-webkit-slider-track {
+    background: #2B5F82 !important;
+    height: 8px !important;
+    border-radius: 4px;
+    border: 2px solid #1A2332 !important;
+  }
+
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    background: var(--architect-orange);
+    height: 20px;
+    width: 20px;
+    border-radius: 50%;
+    border: 3px solid white;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+    margin-top: -6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  input[type="range"]::-webkit-slider-thumb:hover {
+    background: var(--architect-orange);
+    transform: scale(1.1);
+  }
+
+  input[type="range"]::-moz-range-track {
+    background: #2B5F82 !important;
+    height: 8px !important;
+    border-radius: 4px;
+    border: 2px solid #1A2332 !important;
+  }
+
+  input[type="range"]::-moz-range-thumb {
+    background: var(--architect-orange);
+    height: 20px;
+    width: 20px;
+    border-radius: 50%;
+    border: 3px solid white;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  input[type="range"]::-moz-range-thumb:hover {
+    background: var(--architect-orange);
+    transform: scale(1.1);
+  }
+
+  /* Number input styling */
+  input[type="number"],
+  input[type="color"] {
+    transition: all 0.2s ease;
+  }
+
+  input[type="number"]:focus,
+  input[type="text"]:focus {
+    outline: none;
+    border-color: var(--architect-blue);
+    box-shadow: 0 0 0 3px rgba(43, 95, 130, 0.1);
+  }
+
+  /* Button hover effects */
+  button {
+    transition: all 0.2s ease;
+    position: relative;
+    overflow: hidden;
+  }
+
+  button:active {
+    transform: translateY(1px);
+  }
+
+  /* Canvas container effects */
+  .canvas-container {
+    position: relative;
+    background: white;
+    border: 2px solid var(--canvas-border);
+    box-shadow:
+      0 4px 6px -1px var(--subtle-shadow),
+      0 2px 4px -1px var(--subtle-shadow),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+    transition: all 0.3s ease;
+  }
+
+  .canvas-container:hover {
+    box-shadow:
+      0 10px 15px -3px var(--subtle-shadow),
+      0 4px 6px -2px var(--subtle-shadow),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+  }
+
+  /* Panel styling */
+  .control-panel {
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--canvas-border);
+    box-shadow:
+      0 4px 6px -1px var(--subtle-shadow),
+      0 2px 4px -1px var(--subtle-shadow);
+    transition: all 0.3s ease;
+  }
+
+  .control-panel:hover {
+    box-shadow:
+      0 10px 15px -3px var(--subtle-shadow),
+      0 4px 6px -2px var(--subtle-shadow);
+  }
 }
