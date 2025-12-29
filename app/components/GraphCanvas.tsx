@@ -487,8 +487,8 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       ctx.stroke();
     }
 
-    // Draw selection highlights
-    if (selectedElementId !== null && selectedElementId < elements.length) {
+    // Draw selection highlights (only in select mode)
+    if (drawMode === 'select' && selectedElementId !== null && selectedElementId < elements.length) {
       const selectedElement = elements[selectedElementId];
 
       // Draw control points for selected element
@@ -625,6 +625,15 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       onElementsChange(elements.length);
     }
   }, [elements, onElementsChange]);
+
+  // Clear selection when switching away from select mode
+  useEffect(() => {
+    if (drawMode !== 'select') {
+      setSelectedElementId(null);
+      setDraggingPointIndex(null);
+      setDraggingControlPointFlag(false);
+    }
+  }, [drawMode]);
 
   // Handle mouse/touch events
   const getEventPoint = (e: React.MouseEvent | React.TouchEvent): Point => {
