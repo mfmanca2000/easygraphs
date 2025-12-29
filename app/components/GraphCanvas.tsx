@@ -49,6 +49,7 @@ export interface GraphCanvasHandle {
   exportToPNG: () => void;
   getSelectedElement: () => GraphElement | null;
   getSelectedElementId: () => number | null;
+  updateSelectedElement: (color: string, lineWidth: number) => void;
 }
 
 const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function GraphCanvasComponent(props, ref) {
@@ -906,14 +907,8 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
           color: strokeColor,
           lineWidth: strokeWidth
         };
-        setElements(prev => {
-          console.log('Adding bezier element, current count:', prev.length);
-          return [...prev, newElement];
-        });
-        setActionHistory(prev => {
-          console.log('Adding to history, current count:', prev.length);
-          return [...prev, 'element'];
-        });
+        setElements(prev => [...prev, newElement]);
+        setActionHistory(prev => [...prev, 'element']);
         setCurrentPoints([]);
         setTempControlPoint(null);
       }
@@ -950,16 +945,11 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
   }, []);
 
   const undo = useCallback(() => {
-    console.log('=== UNDO FUNCTION CALLED ===');
-    console.log('undoInProgressRef.current:', undoInProgressRef.current);
-
     // Prevent duplicate undo operations
     if (undoInProgressRef.current) {
-      console.log('Undo already in progress, skipping');
       return;
     }
 
-    console.log('Proceeding with undo');
     undoInProgressRef.current = true;
 
     // Get the current state values
@@ -976,10 +966,6 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
         lastActionType = prevHistory[prevHistory.length - 1];
         const newHistory = prevHistory.slice(0, -1);
 
-        console.log('Undo - removing action type:', lastActionType);
-        console.log('History before:', prevHistory);
-        console.log('History after:', newHistory);
-
         return newHistory;
       });
     });
@@ -989,9 +975,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       flushSync(() => {
         setElements(prev => {
           if (prev.length === 0) return prev;
-          console.log('Removing element, count before:', prev.length);
           const newElements = prev.slice(0, -1);
-          console.log('Element count after:', newElements.length);
           // Clear selection if we're removing the selected element
           setSelectedElementId(current => {
             if (current !== null && current >= newElements.length) {
@@ -1006,7 +990,6 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       flushSync(() => {
         setFillAreas(prev => {
           if (prev.length === 0) return prev;
-          console.log('Removing fill, count before:', prev.length);
           return prev.slice(0, -1);
         });
       });
@@ -1045,6 +1028,21 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     return selectedElementId;
   }, [selectedElementId]);
 
+  const updateSelectedElement = useCallback((color: string, lineWidth: number) => {
+    if (selectedElementId === null || selectedElementId >= elements.length) {
+      return;
+    }
+
+    setElements(prev => {
+      const newElements = [...prev];
+      const element = { ...newElements[selectedElementId] };
+      element.color = color;
+      element.lineWidth = lineWidth;
+      newElements[selectedElementId] = element;
+      return newElements;
+    });
+  }, [selectedElementId, elements.length]);
+
   // Expose methods via imperative handle
   useImperativeHandle(ref, () => ({
     addLineByCoordinates,
@@ -1054,8 +1052,9 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     getElements: () => elements,
     exportToPNG,
     getSelectedElement,
-    getSelectedElementId
-  }), [addLineByCoordinates, addFillArea, clearCanvas, undo, elements, exportToPNG, getSelectedElement, getSelectedElementId]);
+    getSelectedElementId,
+    updateSelectedElement
+  }), [addLineByCoordinates, addFillArea, clearCanvas, undo, elements, exportToPNG, getSelectedElement, getSelectedElementId, updateSelectedElement]);
 
   return (
     <canvas

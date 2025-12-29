@@ -50,6 +50,13 @@ export default function Home() {
     return () => window.removeEventListener('resize', updateCanvasSize);
   }, []);
 
+  // Apply stroke color and width changes to selected element
+  useEffect(() => {
+    if (selectedElementId !== null && canvasRef.current) {
+      canvasRef.current.updateSelectedElement(strokeColor, strokeWidth);
+    }
+  }, [strokeColor, strokeWidth, selectedElementId]);
+
   const handleClear = () => {
     if (canvasRef.current) {
       canvasRef.current.clearCanvas();
@@ -57,7 +64,6 @@ export default function Home() {
   };
 
   const handleUndo = () => {
-    console.log('handleUndo called');
     if (canvasRef.current) {
       canvasRef.current.undo();
     }
