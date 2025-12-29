@@ -136,6 +136,11 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
   // Pan offset for mouse-centered zooming (in pixels)
   const [panOffset, setPanOffset] = useState<Point>({ x: 0, y: 0 });
 
+  // Panning state
+  const [isPanning, setIsPanning] = useState(false);
+  const [panStart, setPanStart] = useState<Point | null>(null);
+  const justPannedRef = useRef(false);
+
   // Ref to prevent duplicate undo operations
   const undoInProgressRef = useRef(false);
 
@@ -180,8 +185,14 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       ctx.strokeStyle = '#D4E4EC';
       ctx.lineWidth = 1;
 
+      // Calculate visible graph coordinate range
+      const leftEdge = (0 - centerX) / scale.x;
+      const rightEdge = (canvas.width - centerX) / scale.x;
+      const topEdge = (centerY - 0) / scale.y;
+      const bottomEdge = (centerY - canvas.height) / scale.y;
+
       // Draw vertical grid lines
-      for (let i = -Math.floor(centerX / scale.x); i <= Math.floor(centerX / scale.x); i++) {
+      for (let i = Math.floor(leftEdge); i <= Math.ceil(rightEdge); i++) {
         const x = centerX + i * scale.x;
         ctx.beginPath();
         ctx.moveTo(x, 0);
@@ -190,8 +201,8 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       }
 
       // Draw horizontal grid lines
-      for (let i = -Math.floor(centerY / scale.y); i <= Math.floor(centerY / scale.y); i++) {
-        const y = centerY + i * scale.y;
+      for (let i = Math.floor(bottomEdge); i <= Math.ceil(topEdge); i++) {
+        const y = centerY - i * scale.y;
         ctx.beginPath();
         ctx.moveTo(0, y);
         ctx.lineTo(canvas.width, y);
@@ -222,8 +233,14 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
 
+      // Calculate visible graph coordinate range
+      const leftEdge = (0 - centerX) / scale.x;
+      const rightEdge = (canvas.width - centerX) / scale.x;
+      const topEdge = (centerY - 0) / scale.y;
+      const bottomEdge = (centerY - canvas.height) / scale.y;
+
       // X-axis units
-      for (let i = -Math.floor(centerX / scale.x); i <= Math.floor(centerX / scale.x); i++) {
+      for (let i = Math.floor(leftEdge); i <= Math.ceil(rightEdge); i++) {
         if (i === 0) continue; // Skip origin
         const x = centerX + i * scale.x;
         if (x < 0 || x > canvas.width) continue;
@@ -241,7 +258,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       // Y-axis units
       ctx.textAlign = 'right';
       ctx.textBaseline = 'middle';
-      for (let i = -Math.floor(centerY / scale.y); i <= Math.floor(centerY / scale.y); i++) {
+      for (let i = Math.floor(bottomEdge); i <= Math.ceil(topEdge); i++) {
         if (i === 0) continue; // Skip origin
         const y = centerY - i * scale.y;
         if (y < 0 || y > canvas.height) continue;
@@ -1086,6 +1103,12 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
   };
 
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    // Ignore clicks when panning or just after panning
+    if (isPanning || justPannedRef.current) {
+      justPannedRef.current = false;
+      return;
+    }
+
     const point = getEventPoint(e);
 
     if (drawMode === 'select') {
@@ -1147,6 +1170,16 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
     const { x: canvasX, y: canvasY } = getCanvasCoordinates(e);
 
+    // Check if CTRL key is pressed (for panning)
+    const isCtrlPressed = 'ctrlKey' in e && e.ctrlKey;
+
+    if (isCtrlPressed) {
+      // Start panning
+      setIsPanning(true);
+      setPanStart({ x: canvasX, y: canvasY });
+      return;
+    }
+
     if (drawMode === 'select' && selectedElementId !== null) {
       // Check if clicking on a control point of selected element
       const clickedPoint = findClickedPoint(canvasX, canvasY, selectedElementId);
@@ -1174,6 +1207,22 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
   };
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    const { x: canvasX, y: canvasY } = getCanvasCoordinates(e);
+
+    // Handle panning
+    if (isPanning && panStart) {
+      const deltaX = canvasX - panStart.x;
+      const deltaY = canvasY - panStart.y;
+
+      setPanOffset(prev => ({
+        x: prev.x + deltaX,
+        y: prev.y + deltaY
+      }));
+
+      setPanStart({ x: canvasX, y: canvasY });
+      return;
+    }
+
     const point = getEventPoint(e);
 
     if (drawMode === 'select' && selectedElementId !== null) {
@@ -1207,6 +1256,14 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
   };
 
   const handleMouseUp = () => {
+    // Reset panning state
+    if (isPanning) {
+      setIsPanning(false);
+      setPanStart(null);
+      justPannedRef.current = true;
+      return;
+    }
+
     // Reset dragging states
     setDraggingPointIndex(null);
     setDraggingControlPointFlag(false);
@@ -1608,10 +1665,11 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       ref={canvasRef}
       width={width}
       height={height}
-      className="cursor-crosshair touch-none rounded"
+      className="touch-none rounded"
       style={{
         border: '2px solid var(--canvas-border)',
-        boxShadow: 'inset 0 0 0 1px rgba(255, 255, 255, 0.5)'
+        boxShadow: 'inset 0 0 0 1px rgba(255, 255, 255, 0.5)',
+        cursor: isPanning ? 'grabbing' : 'crosshair'
       }}
       onClick={handleCanvasClick}
       onMouseDown={handleMouseDown}

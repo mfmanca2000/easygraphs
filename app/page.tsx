@@ -444,6 +444,14 @@ export default function Home() {
                         <span style={{ color: 'var(--architect-blue)', fontWeight: 600 }}>→</span>
                         <span><strong>Function:</strong> Enter f(x) formula to plot graphs</span>
                       </li>
+                      <li className="flex items-start gap-2">
+                        <span style={{ color: 'var(--architect-orange)', fontWeight: 600 }}>→</span>
+                        <span><strong>Pan:</strong> Hold CTRL + drag to move the canvas</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span style={{ color: 'var(--architect-green)', fontWeight: 600 }}>→</span>
+                        <span><strong>Zoom:</strong> Scroll mouse wheel to zoom in/out</span>
+                      </li>
                     </ul>
                   </div>
                 </div>
