@@ -17,6 +17,8 @@ export interface ToolbarProps {
   onClear: () => void;
   onUndo: () => void;
   onExport: () => void;
+  onExportJSON: () => void;
+  onImportJSON: () => void;
 }
 
 const PRESET_COLORS = [
@@ -38,7 +40,9 @@ export default function Toolbar({
   onDrawModeChange,
   onClear,
   onUndo,
-  onExport
+  onExport,
+  onExportJSON,
+  onImportJSON
 }: ToolbarProps) {
   return (
     <div className="control-panel rounded-lg p-5">
@@ -184,6 +188,28 @@ export default function Toolbar({
             }}
           >
             ↓ Export PNG
+          </button>
+          <button
+            onClick={onExportJSON}
+            className="w-full px-4 py-2.5 rounded-md text-sm font-medium transition-all"
+            style={{
+              background: 'var(--architect-blue)',
+              color: 'white',
+              border: 'none'
+            }}
+          >
+            ↓ Export JSON
+          </button>
+          <button
+            onClick={onImportJSON}
+            className="w-full px-4 py-2.5 rounded-md text-sm font-medium transition-all"
+            style={{
+              background: 'transparent',
+              color: 'var(--architect-blue)',
+              border: '1.5px solid var(--architect-blue)'
+            }}
+          >
+            ↑ Import JSON
           </button>
           <button
             onClick={onUndo}

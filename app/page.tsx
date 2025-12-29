@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import GraphCanvas, { DrawMode, Point, GraphCanvasHandle, GraphElement } from './components/GraphCanvas';
+import GraphCanvas, { DrawMode, Point, GraphCanvasHandle, GraphElement, EasyGraphsExport } from './components/GraphCanvas';
 import Toolbar from './components/Toolbar';
 import ScaleControls from './components/ScaleControls';
 import CoordinateInput from './components/CoordinateInput';
@@ -91,6 +91,119 @@ export default function Home() {
     }
   };
 
+  const handleExportJSON = () => {
+    if (!canvasRef.current) return;
+
+    // Get data from GraphCanvas
+    const canvasData = canvasRef.current.getExportData();
+
+    // Build complete export object
+    const exportData: EasyGraphsExport = {
+      version: "1.0.0",
+      metadata: {
+        exportDate: new Date().toISOString(),
+        appVersion: "1.0.0"
+      },
+      canvas: {
+        width: canvasSize.width,
+        height: canvasSize.height
+      },
+      view: {
+        scale: { ...scale },
+        panOffset: canvasData.panOffset,
+        showGrid,
+        showAxisUnits
+      },
+      drawing: {
+        elements: canvasData.elements,
+        fillAreas: canvasData.fillAreas
+      },
+      settings: {
+        strokeColor,
+        strokeWidth,
+        drawMode
+      }
+    };
+
+    // Create and download JSON file
+    const jsonString = JSON.stringify(exportData, null, 2);
+    const blob = new Blob([jsonString], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+    link.download = `easygraphs-${timestamp}.json`;
+    link.href = url;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportJSON = () => {
+    // Create file input element
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json,application/json';
+
+    input.onchange = async (e: Event) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+
+      try {
+        const text = await file.text();
+        const importData: EasyGraphsExport = JSON.parse(text);
+
+        // Validate schema version
+        if (!importData.version || importData.version !== "1.0.0") {
+          alert('Unsupported file version. Please use a compatible EasyGraphs export file.');
+          return;
+        }
+
+        // Validate required fields
+        if (!importData.drawing || !importData.view) {
+          alert('Invalid EasyGraphs file format.');
+          return;
+        }
+
+        // Import canvas data first
+        if (canvasRef.current) {
+          canvasRef.current.importData({
+            elements: importData.drawing.elements,
+            fillAreas: importData.drawing.fillAreas,
+            panOffset: importData.view.panOffset
+          });
+        }
+
+        // Update page-level state
+        setScale(importData.view.scale);
+        setShowGrid(importData.view.showGrid);
+        setShowAxisUnits(importData.view.showAxisUnits);
+
+        // Optionally restore canvas size (may want to skip on mobile)
+        if (window.innerWidth >= 1024) {
+          setCanvasSize({
+            width: importData.canvas.width,
+            height: importData.canvas.height
+          });
+        }
+
+        // Restore settings if available
+        if (importData.settings) {
+          setStrokeColor(importData.settings.strokeColor);
+          setStrokeWidth(importData.settings.strokeWidth);
+          setDrawMode(importData.settings.drawMode);
+        }
+
+        // Update element count
+        setElementCount(importData.drawing.elements.length);
+
+      } catch (error) {
+        console.error('Import error:', error);
+        alert('Failed to import file. Please check that it is a valid EasyGraphs JSON file.');
+      }
+    };
+
+    input.click();
+  };
+
   const handleSelectionChange = (elementId: number | null) => {
     if (canvasRef.current) {
       const element = canvasRef.current.getSelectedElement();
@@ -149,6 +262,8 @@ export default function Home() {
               onClear={handleClear}
               onUndo={handleUndo}
               onExport={handleExport}
+              onExportJSON={handleExportJSON}
+              onImportJSON={handleImportJSON}
             />
 
             <ScaleControls

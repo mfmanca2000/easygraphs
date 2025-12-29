@@ -5,6 +5,11 @@ import { flushSync } from 'react-dom';
 
 export type DrawMode = 'line' | 'bezier' | 'freehand' | 'fill' | 'select';
 
+export type Action =
+  | { type: 'element' }
+  | { type: 'fill' }
+  | { type: 'modify'; elementId: number; previousState: GraphElement };
+
 export interface Point {
   x: number;
   y: number;
@@ -23,6 +28,39 @@ export interface FillArea {
   fillAbove: boolean;
   color: string;
   fillToAxis?: boolean; // If true, fill to axis instead of canvas edge
+}
+
+export interface GraphExportData {
+  elements: GraphElement[];
+  fillAreas: FillArea[];
+  panOffset: Point;
+}
+
+export interface EasyGraphsExport {
+  version: string;
+  metadata: {
+    exportDate: string;
+    appVersion?: string;
+  };
+  canvas: {
+    width: number;
+    height: number;
+  };
+  view: {
+    scale: { x: number; y: number };
+    panOffset: { x: number; y: number };
+    showGrid: boolean;
+    showAxisUnits: boolean;
+  };
+  drawing: {
+    elements: GraphElement[];
+    fillAreas: FillArea[];
+  };
+  settings: {
+    strokeColor: string;
+    strokeWidth: number;
+    drawMode: DrawMode;
+  };
 }
 
 export interface GraphCanvasProps {
@@ -50,6 +88,8 @@ export interface GraphCanvasHandle {
   getSelectedElement: () => GraphElement | null;
   getSelectedElementId: () => number | null;
   updateSelectedElement: (color: string, lineWidth: number) => void;
+  getExportData: () => GraphExportData;
+  importData: (data: GraphExportData) => void;
 }
 
 const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function GraphCanvasComponent(props, ref) {
@@ -71,7 +111,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [elements, setElements] = useState<GraphElement[]>([]);
   const [fillAreas, setFillAreas] = useState<FillArea[]>([]);
-  const [actionHistory, setActionHistory] = useState<('element' | 'fill')[]>([]);
+  const [actionHistory, setActionHistory] = useState<Action[]>([]);
   const [currentPoints, setCurrentPoints] = useState<Point[]>([]);
   const [isDrawing, setIsDrawing] = useState(false);
   const [tempControlPoint, setTempControlPoint] = useState<Point | null>(null);
@@ -644,8 +684,15 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     let clientX: number, clientY: number;
 
     if ('touches' in e) {
-      clientX = e.touches[0].clientX;
-      clientY = e.touches[0].clientY;
+      if (e.touches.length > 0) {
+        clientX = e.touches[0].clientX;
+        clientY = e.touches[0].clientY;
+      } else if ('changedTouches' in e && e.changedTouches.length > 0) {
+        clientX = e.changedTouches[0].clientX;
+        clientY = e.changedTouches[0].clientY;
+      } else {
+        return { x: 0, y: 0 };
+      }
     } else {
       clientX = e.clientX;
       clientY = e.clientY;
@@ -655,6 +702,35 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     const canvasY = clientY - rect.top;
 
     return canvasToGraph(canvasX, canvasY);
+  };
+
+  // Helper to get canvas coordinates from mouse or touch event
+  const getCanvasCoordinates = (e: React.MouseEvent | React.TouchEvent): { x: number; y: number } => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
+
+    const rect = canvas.getBoundingClientRect();
+    let clientX: number, clientY: number;
+
+    if ('touches' in e) {
+      if (e.touches.length > 0) {
+        clientX = e.touches[0].clientX;
+        clientY = e.touches[0].clientY;
+      } else if ('changedTouches' in e && e.changedTouches.length > 0) {
+        clientX = e.changedTouches[0].clientX;
+        clientY = e.changedTouches[0].clientY;
+      } else {
+        return { x: 0, y: 0 };
+      }
+    } else {
+      clientX = e.clientX;
+      clientY = e.clientY;
+    }
+
+    return {
+      x: clientX - rect.left,
+      y: clientY - rect.top
+    };
   };
 
   // Helper: Check if a canvas point is near a graph point
@@ -777,17 +853,12 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     return null;
   };
 
-  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
     const point = getEventPoint(e);
 
     if (drawMode === 'select') {
       // Selection mode: find and select element
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-
-      const rect = canvas.getBoundingClientRect();
-      const canvasX = e.clientX - rect.left;
-      const canvasY = e.clientY - rect.top;
+      const { x: canvasX, y: canvasY } = getCanvasCoordinates(e);
 
       const clickedElement = findClickedElement(canvasX, canvasY);
       setSelectedElementId(clickedElement);
@@ -805,7 +876,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
           lineWidth: strokeWidth
         };
         setElements(prev => [...prev, newElement]);
-        setActionHistory(prev => [...prev, 'element']);
+        setActionHistory(prev => [...prev, { type: 'element' }]);
         setCurrentPoints([]);
       }
     } else if (drawMode === 'bezier') {
@@ -824,13 +895,8 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     onCoordinateClick?.(point);
   };
 
-  const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const rect = canvas.getBoundingClientRect();
-    const canvasX = e.clientX - rect.left;
-    const canvasY = e.clientY - rect.top;
+  const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    const { x: canvasX, y: canvasY } = getCanvasCoordinates(e);
 
     if (drawMode === 'select' && selectedElementId !== null) {
       // Check if clicking on a control point of selected element
@@ -858,7 +924,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     }
   };
 
-  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
     const point = getEventPoint(e);
 
     if (drawMode === 'select' && selectedElementId !== null) {
@@ -904,7 +970,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
         lineWidth: strokeWidth
       };
       setElements(prev => [...prev, newElement]);
-      setActionHistory(prev => [...prev, 'element']);
+      setActionHistory(prev => [...prev, { type: 'element' }]);
       setCurrentPoints([]);
       setIsDrawing(false);
     } else if (drawMode === 'bezier' && draggingControl) {
@@ -917,7 +983,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
           lineWidth: strokeWidth
         };
         setElements(prev => [...prev, newElement]);
-        setActionHistory(prev => [...prev, 'element']);
+        setActionHistory(prev => [...prev, { type: 'element' }]);
         setCurrentPoints([]);
         setTempControlPoint(null);
       }
@@ -934,12 +1000,12 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       lineWidth: strokeWidth
     };
     setElements(prev => [...prev, newElement]);
-    setActionHistory(prev => [...prev, 'element']);
+    setActionHistory(prev => [...prev, { type: 'element' }]);
   }, [strokeColor, strokeWidth]);
 
   const addFillArea = useCallback((elementId: number, fillAbove: boolean, color: string, fillToAxis: boolean = false) => {
     setFillAreas(prev => [...prev, { elementId, fillAbove, color, fillToAxis }]);
-    setActionHistory(prev => [...prev, 'fill']);
+    setActionHistory(prev => [...prev, { type: 'fill' }]);
   }, []);
 
   const clearCanvas = useCallback(() => {
@@ -962,7 +1028,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     undoInProgressRef.current = true;
 
     // Get the current state values
-    let lastActionType: 'element' | 'fill' | null = null;
+    let lastAction: Action | null = null;
 
     // Use flushSync to ensure synchronous state updates
     flushSync(() => {
@@ -972,7 +1038,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
           return prevHistory;
         }
 
-        lastActionType = prevHistory[prevHistory.length - 1];
+        lastAction = prevHistory[prevHistory.length - 1];
         const newHistory = prevHistory.slice(0, -1);
 
         return newHistory;
@@ -980,7 +1046,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     });
 
     // Update elements or fills based on the action type (after history is updated)
-    if (lastActionType === 'element') {
+    if (lastAction?.type === 'element') {
       flushSync(() => {
         setElements(prev => {
           if (prev.length === 0) return prev;
@@ -995,11 +1061,22 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
           return newElements;
         });
       });
-    } else if (lastActionType === 'fill') {
+    } else if (lastAction?.type === 'fill') {
       flushSync(() => {
         setFillAreas(prev => {
           if (prev.length === 0) return prev;
           return prev.slice(0, -1);
+        });
+      });
+    } else if (lastAction?.type === 'modify') {
+      // Restore the previous state of the modified element
+      flushSync(() => {
+        setElements(prev => {
+          const newElements = [...prev];
+          if (lastAction.elementId < newElements.length) {
+            newElements[lastAction.elementId] = { ...lastAction.previousState };
+          }
+          return newElements;
         });
       });
     }
@@ -1026,6 +1103,39 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     });
   }, []);
 
+  const getExportData = useCallback((): GraphExportData => {
+    return {
+      elements: [...elements],
+      fillAreas: [...fillAreas],
+      panOffset: { ...panOffset }
+    };
+  }, [elements, fillAreas, panOffset]);
+
+  const importData = useCallback((data: GraphExportData) => {
+    // Clear current state
+    setSelectedElementId(null);
+    setDraggingPointIndex(null);
+    setDraggingControlPointFlag(false);
+    setCurrentPoints([]);
+    setTempControlPoint(null);
+
+    // Import new data
+    setElements(data.elements || []);
+    setFillAreas(data.fillAreas || []);
+    setPanOffset(data.panOffset || { x: 0, y: 0 });
+
+    // Rebuild action history for undo functionality
+    const history: Action[] = [];
+    data.elements.forEach(() => history.push({ type: 'element' }));
+    data.fillAreas.forEach(() => history.push({ type: 'fill' }));
+    setActionHistory(history);
+
+    // Notify parent of element count change
+    if (onElementsChange) {
+      onElementsChange(data.elements.length);
+    }
+  }, [onElementsChange]);
+
   const getSelectedElement = useCallback(() => {
     if (selectedElementId === null || selectedElementId >= elements.length) {
       return null;
@@ -1042,6 +1152,16 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       return;
     }
 
+    const currentElement = elements[selectedElementId];
+
+    // Only update if something actually changed
+    if (currentElement.color === color && currentElement.lineWidth === lineWidth) {
+      return;
+    }
+
+    // Save the previous state for undo
+    const previousElement = { ...currentElement };
+
     setElements(prev => {
       const newElements = [...prev];
       const element = { ...newElements[selectedElementId] };
@@ -1050,7 +1170,14 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       newElements[selectedElementId] = element;
       return newElements;
     });
-  }, [selectedElementId, elements.length]);
+
+    // Add modification to action history
+    setActionHistory(prev => [...prev, {
+      type: 'modify',
+      elementId: selectedElementId,
+      previousState: previousElement
+    }]);
+  }, [selectedElementId, elements]);
 
   // Expose methods via imperative handle
   useImperativeHandle(ref, () => ({
@@ -1062,8 +1189,10 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     exportToPNG,
     getSelectedElement,
     getSelectedElementId,
-    updateSelectedElement
-  }), [addLineByCoordinates, addFillArea, clearCanvas, undo, elements, exportToPNG, getSelectedElement, getSelectedElementId, updateSelectedElement]);
+    updateSelectedElement,
+    getExportData,
+    importData
+  }), [addLineByCoordinates, addFillArea, clearCanvas, undo, elements, exportToPNG, getSelectedElement, getSelectedElementId, updateSelectedElement, getExportData, importData]);
 
   return (
     <canvas
@@ -1082,11 +1211,15 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       onMouseLeave={handleMouseUp}
       onTouchStart={(e) => {
         e.preventDefault();
-        handleMouseDown(e as any);
+        handleMouseDown(e);
+        // For touch devices, also handle click logic on touch start
+        if (drawMode === 'line' || drawMode === 'bezier' || drawMode === 'select') {
+          handleCanvasClick(e);
+        }
       }}
       onTouchMove={(e) => {
         e.preventDefault();
-        handleMouseMove(e as any);
+        handleMouseMove(e);
       }}
       onTouchEnd={(e) => {
         e.preventDefault();
