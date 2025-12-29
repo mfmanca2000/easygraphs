@@ -1,5 +1,7 @@
 'use client';
 
+import { Slider } from './ui/slider';
+
 export interface ScaleControlsProps {
   scale: { x: number; y: number };
   onScaleChange: (scale: { x: number; y: number }) => void;
@@ -26,16 +28,13 @@ export default function ScaleControls({ scale, onScaleChange }: ScaleControlsPro
               {scale.x}px/unit
             </span>
           </label>
-          <input
-            type="range"
-            min="10"
-            max="100"
-            value={scale.x}
-            onChange={(e) => onScaleChange({ ...scale, x: Number(e.target.value) })}
+          <Slider
+            min={10}
+            max={100}
+            step={1}
+            value={[scale.x]}
+            onValueChange={(value) => onScaleChange({ ...scale, x: value[0] })}
             className="w-full"
-            style={{
-              accentColor: 'var(--architect-blue)',
-            }}
           />
           <div className="flex justify-between text-xs mt-1" style={{
             color: 'var(--pencil-lead)',
@@ -55,16 +54,13 @@ export default function ScaleControls({ scale, onScaleChange }: ScaleControlsPro
               {scale.y}px/unit
             </span>
           </label>
-          <input
-            type="range"
-            min="10"
-            max="100"
-            value={scale.y}
-            onChange={(e) => onScaleChange({ ...scale, y: Number(e.target.value) })}
+          <Slider
+            min={10}
+            max={100}
+            step={1}
+            value={[scale.y]}
+            onValueChange={(value) => onScaleChange({ ...scale, y: value[0] })}
             className="w-full"
-            style={{
-              accentColor: 'var(--architect-blue)',
-            }}
           />
           <div className="flex justify-between text-xs mt-1" style={{
             color: 'var(--pencil-lead)',

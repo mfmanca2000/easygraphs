@@ -1,6 +1,7 @@
 'use client';
 
 import { DrawMode } from './GraphCanvas';
+import { Slider } from './ui/slider';
 
 export interface ToolbarProps {
   showGrid: boolean;
@@ -153,16 +154,13 @@ export default function Toolbar({
               {strokeWidth}px
             </span>
           </label>
-          <input
-            type="range"
-            min="1"
-            max="20"
-            value={strokeWidth}
-            onChange={(e) => onStrokeWidthChange(Number(e.target.value))}
+          <Slider
+            min={1}
+            max={20}
+            step={1}
+            value={[strokeWidth]}
+            onValueChange={(value) => onStrokeWidthChange(value[0])}
             className="w-full"
-            style={{
-              accentColor: 'var(--architect-blue)',
-            }}
           />
           <div className="flex justify-between text-xs mt-1" style={{
             color: 'var(--pencil-lead)',
