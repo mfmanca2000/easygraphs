@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Copy, Clipboard, Trash2, Undo2, Redo2, Save, Upload, Eraser } from 'lucide-react';
+import { Copy, Clipboard, Trash2, Undo2, Redo2, Save, Upload, Eraser, Focus } from 'lucide-react';
 
 export interface ActionsPanelProps {
   onUndo: () => void;
@@ -20,6 +20,7 @@ export interface ActionsPanelProps {
   canGroup: boolean;
   canUngroup: boolean;
   onClear: () => void;
+  onResetToDefault: () => void;
 }
 
 export default function ActionsPanel({
@@ -39,6 +40,7 @@ export default function ActionsPanel({
   canGroup,
   canUngroup,
   onClear,
+  onResetToDefault,
 }: ActionsPanelProps) {
   const [exportFormat, setExportFormat] = useState<'png' | 'jpeg' | 'pdf'>('png');
   const [jpegQuality, setJpegQuality] = useState(90);
@@ -75,6 +77,23 @@ export default function ActionsPanel({
             <Redo2 size={16} />
           </button>
         </div>
+
+        {/* Divider */}
+        <div style={{ width: '1px', height: '32px', background: 'var(--canvas-border)' }} />
+
+        {/* Reset to Default */}
+        <button
+          onClick={onResetToDefault}
+          className="px-3 py-2 rounded-md text-sm font-medium transition-all flex items-center gap-2"
+          style={{
+            background: 'transparent',
+            color: 'var(--architect-blue)',
+            border: '1.5px solid var(--canvas-border)'
+          }}
+          title="Reset to Default"
+        >
+          <Focus size={16} />
+        </button>
 
         {/* Divider */}
         <div style={{ width: '1px', height: '32px', background: 'var(--canvas-border)' }} />

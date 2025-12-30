@@ -55,8 +55,24 @@ export default function Home() {
   // Recalculate intersections when elements change and intersection mode is on
   useEffect(() => {
     if (showIntersections && canvasRef.current) {
-      const intersections = canvasRef.current.calculateAllIntersections();
-      setIntersectionPoints(intersections);
+      const newIntersections = canvasRef.current.calculateAllIntersections();
+
+      // Preserve showProjection state from existing intersections
+      // Match intersections by their element pair (elementId1 and elementId2)
+      setIntersectionPoints(prev => {
+        const updatedIntersections = newIntersections.map(newInt => {
+          const existing = prev.find(
+            oldInt =>
+              (oldInt.elementId1 === newInt.elementId1 && oldInt.elementId2 === newInt.elementId2) ||
+              (oldInt.elementId1 === newInt.elementId2 && oldInt.elementId2 === newInt.elementId1)
+          );
+          return {
+            ...newInt,
+            showProjection: existing?.showProjection ?? false
+          };
+        });
+        return updatedIntersections;
+      });
     }
   }, [elements, showIntersections]);
 
@@ -186,6 +202,11 @@ export default function Home() {
     if (canvasRef.current) {
       canvasRef.current.redo();
     }
+  };
+
+  const handleResetToDefault = () => {
+    setScale({ x: 40, y: 40 });
+    canvasRef.current?.resetPanOffset();
   };
 
   const handleCopy = () => {
@@ -598,7 +619,6 @@ export default function Home() {
             <ScaleControls
               scale={scale}
               onScaleChange={setScale}
-              onResetPan={() => canvasRef.current?.resetPanOffset()}
             />
           </CollapsiblePanel>
 
@@ -686,7 +706,6 @@ export default function Home() {
               <ScaleControls
                 scale={scale}
                 onScaleChange={setScale}
-                onResetPan={() => canvasRef.current?.resetPanOffset()}
               />
             </CollapsiblePanel>
 
@@ -751,6 +770,7 @@ export default function Home() {
                 canGroup={canGroup}
                 canUngroup={canUngroup}
                 onClear={handleClear}
+                onResetToDefault={handleResetToDefault}
               />
             </div>
 

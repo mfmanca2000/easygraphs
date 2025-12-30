@@ -5,10 +5,9 @@ import { Slider } from './ui/slider';
 export interface ScaleControlsProps {
   scale: { x: number; y: number };
   onScaleChange: (scale: { x: number; y: number }) => void;
-  onResetPan?: () => void;
 }
 
-export default function ScaleControls({ scale, onScaleChange, onResetPan }: ScaleControlsProps) {
+export default function ScaleControls({ scale, onScaleChange }: ScaleControlsProps) {
   return (
     <div className="space-y-4">
         {/* X Scale */}
@@ -110,22 +109,6 @@ export default function ScaleControls({ scale, onScaleChange, onResetPan }: Scal
             </div>
           </div>
         </div>
-
-        {/* Reset button */}
-        <button
-          onClick={() => {
-            onScaleChange({ x: 40, y: 40 });
-            onResetPan?.();
-          }}
-          className="w-full px-4 py-2.5 rounded-md text-sm font-medium transition-all"
-          style={{
-            background: 'transparent',
-            color: 'var(--architect-blue)',
-            border: '1.5px solid var(--canvas-border)'
-          }}
-        >
-          Reset to Default
-        </button>
     </div>
   );
 }
