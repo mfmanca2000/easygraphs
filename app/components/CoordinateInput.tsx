@@ -1,10 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { Point, GraphElement } from './GraphCanvas';
+import { Point, GraphElement, DrawMode } from './GraphCanvas';
 
 export interface CoordinateInputProps {
   onAddLine: (start: Point, end: Point) => void;
+  onAddPoint?: (point: Point) => void;
   currentPoint?: Point;
   selectedElement?: GraphElement | null;
   selectedElementId?: number | null;
@@ -12,15 +13,19 @@ export interface CoordinateInputProps {
   onTogglePointProjection?: (elementId: number) => void;
   showIntersections?: boolean;
   onToggleIntersections?: () => void;
+  drawMode?: DrawMode;
+  elementCount?: number;
 }
 
-export default function CoordinateInput({ onAddLine, currentPoint, selectedElement, selectedElementId, selectedElements, onTogglePointProjection, showIntersections, onToggleIntersections }: CoordinateInputProps) {
+export default function CoordinateInput({ onAddLine, onAddPoint, currentPoint, selectedElement, selectedElementId, selectedElements, onTogglePointProjection, showIntersections, onToggleIntersections, drawMode = 'line', elementCount = 0 }: CoordinateInputProps) {
   const [startX, setStartX] = useState('');
   const [startY, setStartY] = useState('');
   const [endX, setEndX] = useState('');
   const [endY, setEndY] = useState('');
+  const [pointX, setPointX] = useState('');
+  const [pointY, setPointY] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleLineSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
     const start = {
@@ -42,6 +47,21 @@ export default function CoordinateInput({ onAddLine, currentPoint, selectedEleme
     }
   };
 
+  const handlePointSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+
+    const point = {
+      x: parseFloat(pointX),
+      y: parseFloat(pointY)
+    };
+
+    if (!isNaN(point.x) && !isNaN(point.y) && onAddPoint) {
+      onAddPoint(point);
+      setPointX('');
+      setPointY('');
+    }
+  };
+
   return (
     <div className="control-panel rounded-lg p-5">
       <h3 className="text-sm font-semibold mb-4" style={{
@@ -53,93 +73,149 @@ export default function CoordinateInput({ onAddLine, currentPoint, selectedEleme
         Coordinates
       </h3>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Start Point */}
-        <div>
-          <label className="text-sm font-medium block mb-2" style={{ color: 'var(--pencil-lead)' }}>
-            Start Point
-          </label>
-          <div className="grid grid-cols-2 gap-2">
-            <input
-              type="number"
-              step="0.1"
-              value={startX}
-              onChange={(e) => setStartX(e.target.value)}
-              placeholder="X"
-              className="w-full px-3 py-2 text-sm rounded-md"
-              style={{
-                border: '1.5px solid var(--canvas-border)',
-                fontFamily: 'JetBrains Mono, monospace',
-                color: 'var(--pencil-lead)'
-              }}
-            />
-            <input
-              type="number"
-              step="0.1"
-              value={startY}
-              onChange={(e) => setStartY(e.target.value)}
-              placeholder="Y"
-              className="w-full px-3 py-2 text-sm rounded-md"
-              style={{
-                border: '1.5px solid var(--canvas-border)',
-                fontFamily: 'JetBrains Mono, monospace',
-                color: 'var(--pencil-lead)'
-              }}
-            />
+      {/* Line Tool Form */}
+      {drawMode === 'line' && (
+        <form onSubmit={handleLineSubmit} className="space-y-4">
+          {/* Start Point */}
+          <div>
+            <label className="text-sm font-medium block mb-2" style={{ color: 'var(--pencil-lead)' }}>
+              Start Point
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                type="number"
+                step="0.1"
+                value={startX}
+                onChange={(e) => setStartX(e.target.value)}
+                placeholder="X"
+                className="w-full px-3 py-2 text-sm rounded-md"
+                style={{
+                  border: '1.5px solid var(--canvas-border)',
+                  fontFamily: 'JetBrains Mono, monospace',
+                  color: 'var(--pencil-lead)'
+                }}
+              />
+              <input
+                type="number"
+                step="0.1"
+                value={startY}
+                onChange={(e) => setStartY(e.target.value)}
+                placeholder="Y"
+                className="w-full px-3 py-2 text-sm rounded-md"
+                style={{
+                  border: '1.5px solid var(--canvas-border)',
+                  fontFamily: 'JetBrains Mono, monospace',
+                  color: 'var(--pencil-lead)'
+                }}
+              />
+            </div>
           </div>
-        </div>
 
-        {/* End Point */}
-        <div>
-          <label className="text-sm font-medium block mb-2" style={{ color: 'var(--pencil-lead)' }}>
-            End Point
-          </label>
-          <div className="grid grid-cols-2 gap-2">
-            <input
-              type="number"
-              step="0.1"
-              value={endX}
-              onChange={(e) => setEndX(e.target.value)}
-              placeholder="X"
-              className="w-full px-3 py-2 text-sm rounded-md"
-              style={{
-                border: '1.5px solid var(--canvas-border)',
-                fontFamily: 'JetBrains Mono, monospace',
-                color: 'var(--pencil-lead)'
-              }}
-            />
-            <input
-              type="number"
-              step="0.1"
-              value={endY}
-              onChange={(e) => setEndY(e.target.value)}
-              placeholder="Y"
-              className="w-full px-3 py-2 text-sm rounded-md"
-              style={{
-                border: '1.5px solid var(--canvas-border)',
-                fontFamily: 'JetBrains Mono, monospace',
-                color: 'var(--pencil-lead)'
-              }}
-            />
+          {/* End Point */}
+          <div>
+            <label className="text-sm font-medium block mb-2" style={{ color: 'var(--pencil-lead)' }}>
+              End Point
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                type="number"
+                step="0.1"
+                value={endX}
+                onChange={(e) => setEndX(e.target.value)}
+                placeholder="X"
+                className="w-full px-3 py-2 text-sm rounded-md"
+                style={{
+                  border: '1.5px solid var(--canvas-border)',
+                  fontFamily: 'JetBrains Mono, monospace',
+                  color: 'var(--pencil-lead)'
+                }}
+              />
+              <input
+                type="number"
+                step="0.1"
+                value={endY}
+                onChange={(e) => setEndY(e.target.value)}
+                placeholder="Y"
+                className="w-full px-3 py-2 text-sm rounded-md"
+                style={{
+                  border: '1.5px solid var(--canvas-border)',
+                  fontFamily: 'JetBrains Mono, monospace',
+                  color: 'var(--pencil-lead)'
+                }}
+              />
+            </div>
           </div>
-        </div>
 
-        {/* Submit Button */}
-        <button
-          type="submit"
-          className="w-full px-4 py-2.5 rounded-md text-sm font-medium transition-all"
-          style={{
-            background: 'var(--architect-blue)',
-            color: 'white',
-            border: 'none'
-          }}
-        >
-          + Add Line
-        </button>
-      </form>
+          {/* Submit Button */}
+          <button
+            type="submit"
+            className="w-full px-4 py-2.5 rounded-md text-sm font-medium transition-all"
+            style={{
+              background: 'var(--architect-blue)',
+              color: 'white',
+              border: 'none'
+            }}
+          >
+            + Add Line
+          </button>
+        </form>
+      )}
 
-      {/* Intersection toggle button */}
-      {onToggleIntersections && (
+      {/* Point Tool Form */}
+      {drawMode === 'point' && (
+        <form onSubmit={handlePointSubmit} className="space-y-4">
+          {/* Point */}
+          <div>
+            <label className="text-sm font-medium block mb-2" style={{ color: 'var(--pencil-lead)' }}>
+              Point
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                type="number"
+                step="0.1"
+                value={pointX}
+                onChange={(e) => setPointX(e.target.value)}
+                placeholder="X"
+                className="w-full px-3 py-2 text-sm rounded-md"
+                style={{
+                  border: '1.5px solid var(--canvas-border)',
+                  fontFamily: 'JetBrains Mono, monospace',
+                  color: 'var(--pencil-lead)'
+                }}
+              />
+              <input
+                type="number"
+                step="0.1"
+                value={pointY}
+                onChange={(e) => setPointY(e.target.value)}
+                placeholder="Y"
+                className="w-full px-3 py-2 text-sm rounded-md"
+                style={{
+                  border: '1.5px solid var(--canvas-border)',
+                  fontFamily: 'JetBrains Mono, monospace',
+                  color: 'var(--pencil-lead)'
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Submit Button */}
+          <button
+            type="submit"
+            className="w-full px-4 py-2.5 rounded-md text-sm font-medium transition-all"
+            style={{
+              background: 'var(--architect-blue)',
+              color: 'white',
+              border: 'none'
+            }}
+          >
+            + Add Point
+          </button>
+        </form>
+      )}
+
+      {/* Intersection toggle button - only show when more than 1 element */}
+      {onToggleIntersections && elementCount > 1 && (
         <div className="mt-4 pt-4 border-t" style={{ borderColor: 'var(--graph-lines)' }}>
           <button
             onClick={onToggleIntersections}

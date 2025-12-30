@@ -216,6 +216,7 @@ export interface GraphCanvasProps {
 
 export interface GraphCanvasHandle {
   addLineByCoordinates: (start: Point, end: Point) => void;
+  addPointByCoordinates: (point: Point) => void;
   addFillArea: (elementId: number, fillAbove: boolean, color: string, fillToAxis?: boolean) => void;
   addFunction: (formula: string, xMin: number, xMax: number, color: string, lineWidth: number, lineStyle?: 'solid' | 'dashed' | 'dotted', opacity?: number) => void;
   clearCanvas: () => void;
@@ -3018,6 +3019,22 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     setRedoHistory([]);
   }, [strokeColor, strokeWidth, lineStyle, opacity, arrowType]);
 
+  const addPointByCoordinates = useCallback((point: Point) => {
+    const newElement: GraphElement = {
+      type: 'point',
+      points: [point],
+      color: strokeColor,
+      lineWidth: strokeWidth,
+      pointSize: strokeWidth * 2,
+      showProjection: false,
+      lineStyle: lineStyle,
+      opacity: opacity
+    };
+    setElements(prev => [...prev, newElement]);
+    setActionHistory(prev => [...prev, { type: 'element' }]);
+    setRedoHistory([]);
+  }, [strokeColor, strokeWidth, lineStyle, opacity]);
+
   const addFillArea = useCallback((elementId: number, fillAbove: boolean, color: string, fillToAxis: boolean = false) => {
     setFillAreas(prev => [...prev, { elementId, fillAbove, color, fillToAxis }]);
     setActionHistory(prev => [...prev, { type: 'fill' }]);
@@ -4130,6 +4147,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
   // Expose methods via imperative handle
   useImperativeHandle(ref, () => ({
     addLineByCoordinates,
+    addPointByCoordinates,
     addFillArea,
     addFunction,
     clearCanvas,
@@ -4160,7 +4178,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     ungroupSelection: handleUngroup,
     getGroups: () => groups,
     resetPanOffset: () => setPanOffset({ x: 0, y: 0 })
-  }), [addLineByCoordinates, addFillArea, addFunction, clearCanvas, undo, redo, elements, exportToPNG, exportToJPEG, exportToPDF, getSelectedElement, getSelectedElementId, updateSelectedElement, addModifyAction, getExportData, importData, togglePointProjection, calculateAllIntersections, getLabels, updateLabels, addTextBox, deleteTextBox, selectTextBox, handleCopy, handlePaste, handleDelete, selection, handleGroup, handleUngroup, groups]);
+  }), [addLineByCoordinates, addPointByCoordinates, addFillArea, addFunction, clearCanvas, undo, redo, elements, exportToPNG, exportToJPEG, exportToPDF, getSelectedElement, getSelectedElementId, updateSelectedElement, addModifyAction, getExportData, importData, togglePointProjection, calculateAllIntersections, getLabels, updateLabels, addTextBox, deleteTextBox, selectTextBox, handleCopy, handlePaste, handleDelete, selection, handleGroup, handleUngroup, groups]);
 
   return (
     <canvas

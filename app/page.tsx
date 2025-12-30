@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { flushSync } from 'react-dom';
+import { HelpCircle } from 'lucide-react';
 import GraphCanvas, { DrawMode, Point, GraphCanvasHandle, GraphElement, EasyGraphsExport, GraphLabels, DEFAULT_LABELS, IntersectionPoint } from './components/GraphCanvas';
 import Toolbar from './components/Toolbar';
 import ScaleControls from './components/ScaleControls';
@@ -10,6 +11,7 @@ import FillAreaControls from './components/FillAreaControls';
 import FunctionInput from './components/FunctionInput';
 import LabelControls from './components/LabelControls';
 import CharacterPalette from './components/CharacterPalette';
+import QuickGuidePanel from './components/QuickGuidePanel';
 
 export default function Home() {
   const canvasRef = useRef<GraphCanvasHandle>(null);
@@ -32,6 +34,7 @@ export default function Home() {
   const originalElementRef = useRef<GraphElement | null>(null);
   const [labels, setLabels] = useState<GraphLabels>(DEFAULT_LABELS);
   const [showCharacterPalette, setShowCharacterPalette] = useState(false);
+  const [showQuickGuide, setShowQuickGuide] = useState(false);
   const [hasSelection, setHasSelection] = useState(false);
   const [currentSelection, setCurrentSelection] = useState<{elementIds: Set<number>, textBoxIds: Set<string>}>({
     elementIds: new Set(),
@@ -218,6 +221,12 @@ export default function Home() {
   const handleAddLineByCoordinates = (start: Point, end: Point) => {
     if (canvasRef.current) {
       canvasRef.current.addLineByCoordinates(start, end);
+    }
+  };
+
+  const handleAddPointByCoordinates = (point: Point) => {
+    if (canvasRef.current) {
+      canvasRef.current.addPointByCoordinates(point);
     }
   };
 
@@ -475,7 +484,7 @@ export default function Home() {
     <div className="min-h-screen relative" style={{ paddingTop: '2rem', paddingBottom: '2rem' }}>
       <div className="relative z-10 max-w-400 mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
-        <div className="text-center mb-8 animate-fadeInUp">
+        <div className="text-center mb-8 animate-fadeInUp relative">
           <div className="inline-block mb-4">
             <h1 className="text-5xl sm:text-6xl font-bold tracking-tight" style={{
               color: 'var(--pencil-lead)',
@@ -489,6 +498,27 @@ export default function Home() {
               width: '100%'
             }}></div>
           </div>
+          <button
+            onClick={() => setShowQuickGuide(true)}
+            className="absolute top-0 right-0 w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110"
+            style={{
+              background: 'var(--architect-blue)',
+              color: 'white',
+              border: '2px solid transparent'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'var(--architect-orange)';
+              e.currentTarget.style.borderColor = 'var(--architect-blue)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'var(--architect-blue)';
+              e.currentTarget.style.borderColor = 'transparent';
+            }}
+            title="Quick Guide"
+            aria-label="Open Quick Guide"
+          >
+            <HelpCircle size={20} />
+          </button>
           <p className="text-lg" style={{ color: 'var(--architect-blue)', fontWeight: 500 }}>
             Your digital technical drawing workspace
           </p>
@@ -611,58 +641,6 @@ export default function Home() {
                   onLabelsChange={handleCanvasLabelsChange}
                 />
               </div>
-
-              {/* Instructions */}
-              <div className="mt-4 p-4 rounded-lg" style={{
-                background: 'linear-gradient(135deg, rgba(43, 95, 130, 0.05), rgba(230, 126, 34, 0.05))',
-                border: '1px solid var(--graph-lines)'
-              }}>
-                <div className="flex items-start gap-3">
-                  <div className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center" style={{
-                    background: 'var(--architect-blue)',
-                    color: 'white'
-                  }}>
-                    <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '0.875rem', fontWeight: 600 }}>?</span>
-                  </div>
-                  <div>
-                    <p className="font-semibold mb-2" style={{ color: 'var(--pencil-lead)' }}>Quick Guide</p>
-                    <ul className="space-y-1.5 text-sm" style={{ color: 'var(--pencil-lead)', opacity: 0.8 }}>
-                      <li className="flex items-start gap-2">
-                        <span style={{ color: 'var(--architect-orange)', fontWeight: 600 }}>→</span>
-                        <span><strong>Select:</strong> Click to select, drag points to edit</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span style={{ color: 'var(--architect-orange)', fontWeight: 600 }}>→</span>
-                        <span><strong>Move:</strong> Select object, then CTRL + drag to translate</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span style={{ color: 'var(--architect-blue)', fontWeight: 600 }}>→</span>
-                        <span><strong>Line:</strong> Click two points or enter coordinates</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span style={{ color: 'var(--architect-orange)', fontWeight: 600 }}>→</span>
-                        <span><strong>Bezier:</strong> Click endpoints, drag control point</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span style={{ color: 'var(--architect-green)', fontWeight: 600 }}>→</span>
-                        <span><strong>Freehand:</strong> Click and drag to draw smoothly</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span style={{ color: 'var(--architect-blue)', fontWeight: 600 }}>→</span>
-                        <span><strong>Function:</strong> Enter f(x) formula to plot graphs</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span style={{ color: 'var(--architect-orange)', fontWeight: 600 }}>→</span>
-                        <span><strong>Pan:</strong> Hold CTRL + drag to move the canvas</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span style={{ color: 'var(--architect-green)', fontWeight: 600 }}>→</span>
-                        <span><strong>Zoom:</strong> Scroll mouse wheel to zoom in/out</span>
-                      </li>
-                    </ul>
-                  </div>
-                </div>
-              </div>
             </div>
           </main>
 
@@ -677,6 +655,7 @@ export default function Home() {
             ) : (
               <CoordinateInput
                 onAddLine={handleAddLineByCoordinates}
+                onAddPoint={handleAddPointByCoordinates}
                 currentPoint={currentPoint}
                 selectedElement={selectedElement}
                 selectedElementId={selectedElementId}
@@ -689,6 +668,8 @@ export default function Home() {
                 onTogglePointProjection={handleTogglePointProjection}
                 showIntersections={showIntersections}
                 onToggleIntersections={handleToggleIntersections}
+                drawMode={drawMode}
+                elementCount={elementCount}
               />
             )}
 
@@ -826,6 +807,12 @@ export default function Home() {
       <CharacterPalette
         isOpen={showCharacterPalette}
         onClose={() => setShowCharacterPalette(false)}
+      />
+
+      {/* Quick Guide Panel */}
+      <QuickGuidePanel
+        isOpen={showQuickGuide}
+        onClose={() => setShowQuickGuide(false)}
       />
     </div>
   );
