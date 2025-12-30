@@ -2369,9 +2369,17 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     if (drawMode === 'select') {
       const clickedElementId = findClickedElement(canvasX, canvasY);
       if (clickedElementId !== null) {
-        setMouseDownPosition({ x: canvasX, y: canvasY });
-        setMouseDownOnElementId(clickedElementId);
-        setMouseDownWithCtrl(isCtrlPressed);
+        // Check if we're clicking on a point of this element (if it's selected)
+        // If so, don't track for element drag - let point dragging handle it
+        const isClickedElementSelected = selection.elementIds.has(clickedElementId);
+        const clickedPoint = isClickedElementSelected ? findClickedPoint(canvasX, canvasY, clickedElementId) : null;
+
+        if (!clickedPoint) {
+          // Not clicking on a point, track for potential element drag
+          setMouseDownPosition({ x: canvasX, y: canvasY });
+          setMouseDownOnElementId(clickedElementId);
+          setMouseDownWithCtrl(isCtrlPressed);
+        }
       }
     }
 
@@ -2560,57 +2568,59 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       if (distance > 5) {
         // Threshold met - start dragging
         const clickedElementId = mouseDownOnElementId;
+        const groupMembers = getGroupMembersForElement(clickedElementId);
 
-        // Handle selection based on CTRL state
+        // Determine which elements will be in the final selection after this action
+        let elementsToDrag: Set<number>;
+
         if (mouseDownWithCtrl) {
           // Toggle the element in selection
-          const groupMembers = getGroupMembersForElement(clickedElementId);
           const allMembersSelected = Array.from(groupMembers).every(id => selection.elementIds.has(id));
 
-          setSelection(prev => {
-            const newElementIds = new Set(prev.elementIds);
-            if (allMembersSelected) {
-              // Remove all group members from selection
-              groupMembers.forEach(id => newElementIds.delete(id));
-            } else {
-              // Add all group members to selection
-              groupMembers.forEach(id => newElementIds.add(id));
-            }
-            return { ...prev, elementIds: newElementIds };
-          });
+          if (allMembersSelected) {
+            // Remove all group members from selection
+            elementsToDrag = new Set(selection.elementIds);
+            groupMembers.forEach(id => elementsToDrag.delete(id));
+          } else {
+            // Add all group members to selection
+            elementsToDrag = new Set(selection.elementIds);
+            groupMembers.forEach(id => elementsToDrag.add(id));
+          }
+
+          setSelection(prev => ({
+            ...prev,
+            elementIds: elementsToDrag
+          }));
         } else {
           // Replace selection with clicked element (if not already selected)
           if (!selection.elementIds.has(clickedElementId)) {
-            const groupMembers = getGroupMembersForElement(clickedElementId);
+            elementsToDrag = groupMembers;
             setSelection({
               elementIds: groupMembers,
               textBoxIds: new Set()
             });
+          } else {
+            // Element already selected, drag current selection
+            elementsToDrag = new Set(selection.elementIds);
           }
         }
 
-        // Set up dragging state after selection is updated
-        // We need to use setTimeout to ensure selection state is updated first
-        setTimeout(() => {
-          const currentSelection = selection.elementIds.size > 0 ? selection.elementIds : getGroupMembersForElement(clickedElementId);
+        // Store original states for all elements that will be dragged
+        const originalStates = new Map<number, GraphElement>();
+        elementsToDrag.forEach(elementId => {
+          if (elementId < elements.length) {
+            const element = elements[elementId];
+            originalStates.set(elementId, {
+              ...element,
+              points: element.points.map(p => ({ ...p })),
+              controlPoint: element.controlPoint ? { ...element.controlPoint } : undefined
+            });
+          }
+        });
 
-          // Store original states for all selected elements for undo
-          const originalStates = new Map<number, GraphElement>();
-          currentSelection.forEach(elementId => {
-            if (elementId < elements.length) {
-              const element = elements[elementId];
-              originalStates.set(elementId, {
-                ...element,
-                points: element.points.map(p => ({ ...p })),
-                controlPoint: element.controlPoint ? { ...element.controlPoint } : undefined
-              });
-            }
-          });
-
-          selectedElementsOriginalStatesRef.current = originalStates;
-          setDraggingEntireElement(true);
-          setElementDragStart({ x: canvasX, y: canvasY });
-        }, 0);
+        selectedElementsOriginalStatesRef.current = originalStates;
+        setDraggingEntireElement(true);
+        setElementDragStart({ x: canvasX, y: canvasY });
 
         // Clear mouse down tracking
         setMouseDownPosition(null);
@@ -2651,6 +2661,9 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
         return;
       }
 
+      // Capture the ref value to avoid closure issues
+      const originalStates = selectedElementsOriginalStatesRef.current;
+
       // Calculate total delta from initial drag start position
       const deltaX = canvasX - elementDragStart.x;
       const deltaY = canvasY - elementDragStart.y;
@@ -2663,7 +2676,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
         const newElements = [...prev];
 
         // Translate all selected elements
-        selectedElementsOriginalStatesRef.current!.forEach((originalElement, elementId) => {
+        originalStates.forEach((originalElement, elementId) => {
           const element = { ...newElements[elementId] };
 
           // Translate all points based on original positions + total delta
