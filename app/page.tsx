@@ -20,6 +20,7 @@ export default function Home() {
   const [lineStyle, setLineStyle] = useState<'solid' | 'dashed' | 'dotted'>('solid');
   const [opacity, setOpacity] = useState(1);
   const [arrowType, setArrowType] = useState<'none' | 'end' | 'start' | 'both'>('none');
+  const [curveType, setCurveType] = useState<'quadratic' | 'cubic' | 's-curve'>('quadratic');
   const [drawMode, setDrawMode] = useState<DrawMode>('line');
   const [scale, setScale] = useState({ x: 40, y: 40 });
   const [currentPoint, setCurrentPoint] = useState<Point | undefined>(undefined);
@@ -474,6 +475,8 @@ export default function Home() {
               onOpacityChange={setOpacity}
               arrowType={arrowType}
               onArrowTypeChange={setArrowType}
+              curveType={curveType}
+              onCurveTypeChange={setCurveType}
               drawMode={drawMode}
               onDrawModeChange={setDrawMode}
               onClear={handleClear}
@@ -557,6 +560,7 @@ export default function Home() {
                   lineStyle={lineStyle}
                   opacity={opacity}
                   arrowType={arrowType}
+                  curveType={curveType}
                   drawMode={drawMode}
                   scale={scale}
                   onCoordinateClick={handleCoordinateClick}

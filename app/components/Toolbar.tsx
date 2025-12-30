@@ -19,6 +19,8 @@ export interface ToolbarProps {
   onOpacityChange: (opacity: number) => void;
   arrowType: 'none' | 'end' | 'start' | 'both';
   onArrowTypeChange: (type: 'none' | 'end' | 'start' | 'both') => void;
+  curveType: 'quadratic' | 'cubic' | 's-curve';
+  onCurveTypeChange: (type: 'quadratic' | 'cubic' | 's-curve') => void;
   drawMode: DrawMode;
   onDrawModeChange: (mode: DrawMode) => void;
   onClear: () => void;
@@ -60,6 +62,8 @@ export default function Toolbar({
   onOpacityChange,
   arrowType,
   onArrowTypeChange,
+  curveType,
+  onCurveTypeChange,
   drawMode,
   onDrawModeChange,
   onClear,
@@ -153,7 +157,7 @@ export default function Toolbar({
                 {mode === 'select' ? '↖ Select' :
                  mode === 'point' ? '• Point' :
                  mode === 'line' ? '─ Line' :
-                 mode === 'bezier' ? '∿ Bezier' :
+                 mode === 'bezier' ? '∿ Curve' :
                  mode === 'freehand' ? '✎ Freehand' :
                  mode === 'function' ? 'ƒ(x) Function' :
                  mode === 'textbox' ? '□ Text Box' :
@@ -279,6 +283,31 @@ export default function Toolbar({
             ))}
           </div>
         </div>
+
+        {/* Curve Type - only show when bezier mode is selected */}
+        {drawMode === 'bezier' && (
+          <div>
+            <label className="text-sm font-medium block mb-3" style={{ color: 'var(--pencil-lead)' }}>
+              Curve Type
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              {(['quadratic', 'cubic', 's-curve'] as const).map((type) => (
+                <button
+                  key={type}
+                  onClick={() => onCurveTypeChange(type)}
+                  className="px-3 py-2.5 rounded-md text-sm font-medium transition-all capitalize"
+                  style={{
+                    background: curveType === type ? 'var(--architect-blue)' : 'transparent',
+                    color: curveType === type ? 'white' : 'var(--pencil-lead)',
+                    border: `1.5px solid ${curveType === type ? 'var(--architect-blue)' : 'var(--canvas-border)'}`,
+                  }}
+                >
+                  {type === 'quadratic' ? 'Quad' : type === 'cubic' ? 'Cubic' : 'S-Curve'}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Opacity */}
         <div>

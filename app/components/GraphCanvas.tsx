@@ -27,6 +27,8 @@ export interface GraphElement {
   color: string;
   lineWidth: number;
   controlPoint?: Point;
+  controlPoint2?: Point;  // For cubic bezier curves
+  curveType?: 'quadratic' | 'cubic' | 's-curve';  // For bezier type - default: 'quadratic'
   formula?: string;  // For function type
   xMin?: number;     // For function type
   xMax?: number;     // For function type
@@ -192,6 +194,7 @@ export interface GraphCanvasProps {
   lineStyle: 'solid' | 'dashed' | 'dotted';
   opacity: number;
   arrowType: 'none' | 'end' | 'start' | 'both';
+  curveType: 'quadratic' | 'cubic' | 's-curve';
   drawMode: DrawMode;
   scale: { x: number; y: number };
   onCoordinateClick?: (point: Point) => void;
@@ -244,6 +247,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     lineStyle,
     opacity,
     arrowType,
+    curveType,
     drawMode,
     scale,
     onCoordinateClick,
@@ -262,7 +266,9 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
   const [currentPoints, setCurrentPoints] = useState<Point[]>([]);
   const [isDrawing, setIsDrawing] = useState(false);
   const [tempControlPoint, setTempControlPoint] = useState<Point | null>(null);
+  const [tempControlPoint2, setTempControlPoint2] = useState<Point | null>(null);
   const [draggingControl, setDraggingControl] = useState(false);
+  const [draggingControl2, setDraggingControl2] = useState(false);
 
   // Selection and editing state
   const [selection, setSelection] = useState<SelectionState>({
@@ -271,6 +277,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
   });
   const [draggingPointIndex, setDraggingPointIndex] = useState<number | null>(null);
   const [draggingControlPointFlag, setDraggingControlPointFlag] = useState(false);
+  const [draggingControlPointFlag2, setDraggingControlPointFlag2] = useState(false);  // For second control point in cubic curves
   const [draggingEntireElement, setDraggingEntireElement] = useState(false);
   const [elementDragStart, setElementDragStart] = useState<Point | null>(null);
   const selectedElementsOriginalStatesRef = useRef<Map<number, GraphElement> | null>(null);
@@ -1026,9 +1033,41 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     const end = graphToCanvas(element.points[1].x, element.points[1].y);
     const control = graphToCanvas(element.controlPoint.x, element.controlPoint.y);
 
+    const elementCurveType = element.curveType || 'quadratic';
+
     ctx.beginPath();
     ctx.moveTo(start.x, start.y);
-    ctx.quadraticCurveTo(control.x, control.y, end.x, end.y);
+
+    if (elementCurveType === 'quadratic') {
+      // Quadratic Bezier curve with one control point
+      ctx.quadraticCurveTo(control.x, control.y, end.x, end.y);
+    } else if (elementCurveType === 'cubic' && element.controlPoint2) {
+      // Cubic Bezier curve with two control points
+      const control2 = graphToCanvas(element.controlPoint2.x, element.controlPoint2.y);
+      ctx.bezierCurveTo(control.x, control.y, control2.x, control2.y, end.x, end.y);
+    } else if (elementCurveType === 's-curve') {
+      // S-curve: calculate two control points for smooth S-shape
+      const dx = end.x - start.x;
+      const dy = end.y - start.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      // Use the control point to determine the curve intensity
+      const ctrlDx = control.x - (start.x + end.x) / 2;
+      const ctrlDy = control.y - (start.y + end.y) / 2;
+      const intensity = Math.sqrt(ctrlDx * ctrlDx + ctrlDy * ctrlDy) / dist;
+
+      // Create symmetric control points for S-curve
+      const cp1x = start.x + dx * 0.33 + ctrlDy * intensity;
+      const cp1y = start.y + dy * 0.33 - ctrlDx * intensity;
+      const cp2x = start.x + dx * 0.67 - ctrlDy * intensity;
+      const cp2y = start.y + dy * 0.67 + ctrlDx * intensity;
+
+      ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, end.x, end.y);
+    } else {
+      // Fallback to quadratic if control points are missing
+      ctx.quadraticCurveTo(control.x, control.y, end.x, end.y);
+    }
+
     ctx.stroke();
 
     // Draw arrows if configured
@@ -1037,7 +1076,12 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
 
     if (arrowType === 'end' || arrowType === 'both') {
       // Arrow at end: use tangent from control point to end point
-      drawArrow(ctx, control.x, control.y, end.x, end.y, arrowSize, element.color, element.opacity ?? 1);
+      if (elementCurveType === 'cubic' && element.controlPoint2) {
+        const control2 = graphToCanvas(element.controlPoint2.x, element.controlPoint2.y);
+        drawArrow(ctx, control2.x, control2.y, end.x, end.y, arrowSize, element.color, element.opacity ?? 1);
+      } else {
+        drawArrow(ctx, control.x, control.y, end.x, end.y, arrowSize, element.color, element.opacity ?? 1);
+      }
     }
     if (arrowType === 'start' || arrowType === 'both') {
       // Arrow at start: use tangent from start point to control point
@@ -1473,14 +1517,50 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
 
         ctx.beginPath();
         ctx.moveTo(start.x, start.y);
-        ctx.quadraticCurveTo(control.x, control.y, end.x, end.y);
+
+        // Render based on curve type
+        if (curveType === 'quadratic') {
+          ctx.quadraticCurveTo(control.x, control.y, end.x, end.y);
+        } else if (curveType === 'cubic' && tempControlPoint2) {
+          const control2 = graphToCanvas(tempControlPoint2.x, tempControlPoint2.y);
+          ctx.bezierCurveTo(control.x, control.y, control2.x, control2.y, end.x, end.y);
+        } else if (curveType === 's-curve') {
+          // S-curve preview: calculate two control points
+          const dx = end.x - start.x;
+          const dy = end.y - start.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+
+          const ctrlDx = control.x - (start.x + end.x) / 2;
+          const ctrlDy = control.y - (start.y + end.y) / 2;
+          const intensity = Math.sqrt(ctrlDx * ctrlDx + ctrlDy * ctrlDy) / dist;
+
+          const cp1x = start.x + dx * 0.33 + ctrlDy * intensity;
+          const cp1y = start.y + dy * 0.33 - ctrlDx * intensity;
+          const cp2x = start.x + dx * 0.67 - ctrlDy * intensity;
+          const cp2y = start.y + dy * 0.67 + ctrlDx * intensity;
+
+          ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, end.x, end.y);
+        } else {
+          // Fallback to quadratic
+          ctx.quadraticCurveTo(control.x, control.y, end.x, end.y);
+        }
+
         ctx.stroke();
 
-        // Draw control point
+        // Draw first control point
         ctx.fillStyle = 'red';
         ctx.beginPath();
         ctx.arc(control.x, control.y, 6, 0, Math.PI * 2);
         ctx.fill();
+
+        // Draw second control point for cubic curves
+        if (curveType === 'cubic' && tempControlPoint2) {
+          const control2 = graphToCanvas(tempControlPoint2.x, tempControlPoint2.y);
+          ctx.fillStyle = 'blue';
+          ctx.beginPath();
+          ctx.arc(control2.x, control2.y, 6, 0, Math.PI * 2);
+          ctx.fill();
+        }
       } else {
         ctx.beginPath();
         ctx.moveTo(start.x, start.y);
@@ -1577,7 +1657,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
             ctx.stroke();
           });
 
-          // Draw control point
+          // Draw control point(s)
           if (selectedElement.controlPoint) {
             const controlCanvas = graphToCanvas(selectedElement.controlPoint.x, selectedElement.controlPoint.y);
             ctx.globalAlpha = 1; // Don't apply element opacity to helper lines
@@ -1589,20 +1669,49 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
             ctx.fill();
             ctx.stroke();
 
-            // Draw dashed lines from control point to endpoints
-            ctx.setLineDash([5, 5]);
-            ctx.strokeStyle = '#9B59B6';
-            ctx.lineWidth = 1;
-
             const start = graphToCanvas(selectedElement.points[0].x, selectedElement.points[0].y);
             const end = graphToCanvas(selectedElement.points[1].x, selectedElement.points[1].y);
 
-            ctx.beginPath();
-            ctx.moveTo(start.x, start.y);
-            ctx.lineTo(controlCanvas.x, controlCanvas.y);
-            ctx.lineTo(end.x, end.y);
-            ctx.stroke();
-            ctx.setLineDash([]);
+            // Draw second control point for cubic curves
+            if (selectedElement.curveType === 'cubic' && selectedElement.controlPoint2) {
+              const controlCanvas2 = graphToCanvas(selectedElement.controlPoint2.x, selectedElement.controlPoint2.y);
+              ctx.fillStyle = '#3498DB';
+              ctx.strokeStyle = '#FFFFFF';
+              ctx.lineWidth = 2;
+              ctx.beginPath();
+              ctx.arc(controlCanvas2.x, controlCanvas2.y, 8, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.stroke();
+
+              // Draw dashed lines showing cubic bezier structure
+              ctx.setLineDash([5, 5]);
+              ctx.strokeStyle = '#9B59B6';
+              ctx.lineWidth = 1;
+
+              ctx.beginPath();
+              ctx.moveTo(start.x, start.y);
+              ctx.lineTo(controlCanvas.x, controlCanvas.y);
+              ctx.stroke();
+
+              ctx.strokeStyle = '#3498DB';
+              ctx.beginPath();
+              ctx.moveTo(controlCanvas2.x, controlCanvas2.y);
+              ctx.lineTo(end.x, end.y);
+              ctx.stroke();
+              ctx.setLineDash([]);
+            } else {
+              // Draw dashed lines from control point to endpoints (quadratic/s-curve)
+              ctx.setLineDash([5, 5]);
+              ctx.strokeStyle = '#9B59B6';
+              ctx.lineWidth = 1;
+
+              ctx.beginPath();
+              ctx.moveTo(start.x, start.y);
+              ctx.lineTo(controlCanvas.x, controlCanvas.y);
+              ctx.lineTo(end.x, end.y);
+              ctx.stroke();
+              ctx.setLineDash([]);
+            }
           }
         } else if (selectedElement.type === 'freehand') {
           // Draw a glow around first and last points
@@ -1746,7 +1855,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       ctx.strokeRect(minX, minY, maxX - minX, maxY - minY);
       ctx.setLineDash([]);
     });
-  }, [drawGrid, elements, fillAreas, currentPoints, tempControlPoint, isDrawing, drawMode, strokeColor, strokeWidth, graphToCanvas, drawLine, drawBezier, drawFreehand, drawPoint, drawFunction, fillAreaForElement, selection, selectionBox, isDrawingSelectionBox, simplifyPoints, renderLabels, groups]);
+  }, [drawGrid, elements, fillAreas, currentPoints, tempControlPoint, tempControlPoint2, curveType, isDrawing, drawMode, strokeColor, strokeWidth, graphToCanvas, drawLine, drawBezier, drawFreehand, drawPoint, drawFunction, fillAreaForElement, selection, selectionBox, isDrawingSelectionBox, simplifyPoints, renderLabels, groups]);
 
   // Re-render when dependencies change
   useEffect(() => {
@@ -2006,9 +2115,14 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       }
     }
 
-    // Check control point for bezier
-    if (element.type === 'bezier' && element.controlPoint) {
-      if (isPointNear(canvasX, canvasY, element.controlPoint, 15)) {
+    // Check control points for bezier
+    if (element.type === 'bezier') {
+      // Check second control point first (cubic curves) for better UX
+      if (element.controlPoint2 && isPointNear(canvasX, canvasY, element.controlPoint2, 15)) {
+        return { type: 'control', index: 1 };
+      }
+      // Check first control point
+      if (element.controlPoint && isPointNear(canvasX, canvasY, element.controlPoint, 15)) {
         return { type: 'control', index: 0 };
       }
     }
@@ -2299,8 +2413,13 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       if (clickedPoint) {
         if (clickedPoint.type === 'point') {
           setDraggingPointIndex(clickedPoint.index);
-        } else {
-          setDraggingControlPointFlag(true);
+        } else if (clickedPoint.type === 'control') {
+          // clickedPoint.index: 0 = first control point, 1 = second control point
+          if (clickedPoint.index === 0) {
+            setDraggingControlPointFlag(true);
+          } else {
+            setDraggingControlPointFlag2(true);
+          }
         }
       }
     } else if (drawMode === 'freehand') {
@@ -2389,12 +2508,20 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
             y: p.y + deltaGraphY
           }));
 
-          // Translate control point if it's a bezier
-          if (element.type === 'bezier' && originalElement.controlPoint) {
-            element.controlPoint = {
-              x: originalElement.controlPoint.x + deltaGraphX,
-              y: originalElement.controlPoint.y + deltaGraphY
-            };
+          // Translate control points if it's a bezier
+          if (element.type === 'bezier') {
+            if (originalElement.controlPoint) {
+              element.controlPoint = {
+                x: originalElement.controlPoint.x + deltaGraphX,
+                y: originalElement.controlPoint.y + deltaGraphY
+              };
+            }
+            if (originalElement.controlPoint2) {
+              element.controlPoint2 = {
+                x: originalElement.controlPoint2.x + deltaGraphX,
+                y: originalElement.controlPoint2.y + deltaGraphY
+              };
+            }
           }
 
           newElements[elementId] = element;
@@ -2528,7 +2655,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
           return newElements;
         });
       } else if (draggingControlPointFlag) {
-        // Dragging bezier control point
+        // Dragging bezier first control point
         setElements(prev => {
           const newElements = [...prev];
           const element = { ...newElements[firstElementId] };
@@ -2538,11 +2665,24 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
           newElements[firstElementId] = element;
           return newElements;
         });
+      } else if (draggingControlPointFlag2) {
+        // Dragging bezier second control point (cubic curves)
+        setElements(prev => {
+          const newElements = [...prev];
+          const element = { ...newElements[firstElementId] };
+          if (element.type === 'bezier' && element.controlPoint2) {
+            element.controlPoint2 = point;
+          }
+          newElements[firstElementId] = element;
+          return newElements;
+        });
       }
     } else if (drawMode === 'freehand' && isDrawing) {
       setCurrentPoints(prev => [...prev, point]);
     } else if (drawMode === 'bezier' && draggingControl) {
       setTempControlPoint(point);
+    } else if (drawMode === 'bezier' && draggingControl2) {
+      setTempControlPoint2(point);
     }
   };
 
@@ -2623,6 +2763,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     // Reset dragging states
     setDraggingPointIndex(null);
     setDraggingControlPointFlag(false);
+    setDraggingControlPointFlag2(false);
 
     if (drawMode === 'freehand' && isDrawing && currentPoints.length > 1) {
       const newElement: GraphElement = {
@@ -2639,12 +2780,28 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       setRedoHistory([]);
       setCurrentPoints([]);
       setIsDrawing(false);
-    } else if (drawMode === 'bezier' && draggingControl) {
+    } else if (drawMode === 'bezier' && (draggingControl || draggingControl2)) {
       if (currentPoints.length === 2 && tempControlPoint) {
+        // For cubic curves, wait for second control point if it's being dragged
+        if (curveType === 'cubic' && draggingControl && !tempControlPoint2) {
+          // First control point set, now wait for second control point
+          setDraggingControl(false);
+          // Auto-generate second control point as mirror of first
+          const midX = (currentPoints[0].x + currentPoints[1].x) / 2;
+          const midY = (currentPoints[0].y + currentPoints[1].y) / 2;
+          const cp2X = 2 * midX - tempControlPoint.x;
+          const cp2Y = 2 * midY - tempControlPoint.y;
+          setTempControlPoint2({ x: cp2X, y: cp2Y });
+          setDraggingControl2(true);
+          return;
+        }
+
         const newElement: GraphElement = {
           type: 'bezier',
           points: currentPoints,
           controlPoint: tempControlPoint,
+          controlPoint2: curveType === 'cubic' ? (tempControlPoint2 ?? undefined) : undefined,
+          curveType: curveType,
           color: strokeColor,
           lineWidth: strokeWidth,
           lineStyle: lineStyle,
@@ -2656,8 +2813,10 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
         setRedoHistory([]);
         setCurrentPoints([]);
         setTempControlPoint(null);
+        setTempControlPoint2(null);
       }
       setDraggingControl(false);
+      setDraggingControl2(false);
     }
   };
 
@@ -2761,6 +2920,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     setSelection({ elementIds: new Set(), textBoxIds: new Set() });
     setDraggingPointIndex(null);
     setDraggingControlPointFlag(false);
+    setDraggingControlPointFlag2(false);
   }, []);
 
   const undo = useCallback(() => {
@@ -3447,6 +3607,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     setSelection({ elementIds: new Set(), textBoxIds: new Set() });
     setDraggingPointIndex(null);
     setDraggingControlPointFlag(false);
+    setDraggingControlPointFlag2(false);
     setCurrentPoints([]);
     setTempControlPoint(null);
 
