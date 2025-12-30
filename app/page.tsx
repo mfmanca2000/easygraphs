@@ -19,6 +19,7 @@ export default function Home() {
   const [strokeWidth, setStrokeWidth] = useState(2);
   const [lineStyle, setLineStyle] = useState<'solid' | 'dashed' | 'dotted'>('solid');
   const [opacity, setOpacity] = useState(1);
+  const [arrowType, setArrowType] = useState<'none' | 'end' | 'start' | 'both'>('none');
   const [drawMode, setDrawMode] = useState<DrawMode>('line');
   const [scale, setScale] = useState({ x: 40, y: 40 });
   const [currentPoint, setCurrentPoint] = useState<Point | undefined>(undefined);
@@ -76,6 +77,7 @@ export default function Home() {
       setStrokeWidth(selectedElement.lineWidth);
       setLineStyle(selectedElement.lineStyle || 'solid');
       setOpacity(selectedElement.opacity ?? 1);
+      setArrowType(selectedElement.arrowType || 'none');
       // Save original state when a new element is selected
       originalElementRef.current = { ...selectedElement };
 
@@ -102,15 +104,16 @@ export default function Home() {
       if (selectedElement.color !== strokeColor ||
           selectedElement.lineWidth !== strokeWidth ||
           selectedElement.lineStyle !== lineStyle ||
-          selectedElement.opacity !== opacity) {
+          selectedElement.opacity !== opacity ||
+          selectedElement.arrowType !== arrowType) {
         // Apply change without adding to history
-        canvasRef.current.updateSelectedElement(strokeColor, strokeWidth, false, undefined, lineStyle, opacity);
+        canvasRef.current.updateSelectedElement(strokeColor, strokeWidth, false, undefined, lineStyle, opacity, arrowType);
       }
     }
 
     // Note: selectedElement is intentionally excluded to avoid extra re-renders when the element updates
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [strokeColor, strokeWidth, lineStyle, opacity, selectedElementId]);
+  }, [strokeColor, strokeWidth, lineStyle, opacity, arrowType, selectedElementId]);
 
   // When selection changes, finalize any edits by adding a single entry to history
   const prevSelectedIdRef = useRef<number | null>(null);
@@ -127,7 +130,8 @@ export default function Home() {
         if (currentState.color !== originalElementRef.current.color ||
             currentState.lineWidth !== originalElementRef.current.lineWidth ||
             currentState.lineStyle !== originalElementRef.current.lineStyle ||
-            currentState.opacity !== originalElementRef.current.opacity) {
+            currentState.opacity !== originalElementRef.current.opacity ||
+            currentState.arrowType !== originalElementRef.current.arrowType) {
           // Add a single modify action for all the changes made to the previous element
           canvasRef.current.addModifyAction(prevId, originalElementRef.current);
         }
@@ -468,6 +472,8 @@ export default function Home() {
               onLineStyleChange={setLineStyle}
               opacity={opacity}
               onOpacityChange={setOpacity}
+              arrowType={arrowType}
+              onArrowTypeChange={setArrowType}
               drawMode={drawMode}
               onDrawModeChange={setDrawMode}
               onClear={handleClear}
@@ -550,6 +556,7 @@ export default function Home() {
                   strokeWidth={strokeWidth}
                   lineStyle={lineStyle}
                   opacity={opacity}
+                  arrowType={arrowType}
                   drawMode={drawMode}
                   scale={scale}
                   onCoordinateClick={handleCoordinateClick}

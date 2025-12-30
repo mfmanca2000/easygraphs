@@ -17,6 +17,8 @@ export interface ToolbarProps {
   onLineStyleChange: (style: 'solid' | 'dashed' | 'dotted') => void;
   opacity: number;
   onOpacityChange: (opacity: number) => void;
+  arrowType: 'none' | 'end' | 'start' | 'both';
+  onArrowTypeChange: (type: 'none' | 'end' | 'start' | 'both') => void;
   drawMode: DrawMode;
   onDrawModeChange: (mode: DrawMode) => void;
   onClear: () => void;
@@ -56,6 +58,8 @@ export default function Toolbar({
   onLineStyleChange,
   opacity,
   onOpacityChange,
+  arrowType,
+  onArrowTypeChange,
   drawMode,
   onDrawModeChange,
   onClear,
@@ -242,6 +246,35 @@ export default function Toolbar({
                   {style === 'dotted' && '┈'}
                 </span>
                 <span className="text-xs">{style}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Arrow Type */}
+        <div>
+          <label className="text-sm font-medium block mb-3" style={{ color: 'var(--pencil-lead)' }}>
+            Arrow Type
+          </label>
+          <div className="grid grid-cols-2 gap-2">
+            {(['none', 'end', 'start', 'both'] as const).map((type) => (
+              <button
+                key={type}
+                onClick={() => onArrowTypeChange(type)}
+                className="px-3 py-2.5 rounded-md text-sm font-medium transition-all"
+                style={{
+                  background: arrowType === type ? 'var(--architect-blue)' : 'transparent',
+                  color: arrowType === type ? 'white' : 'var(--pencil-lead)',
+                  border: `1.5px solid ${arrowType === type ? 'var(--architect-blue)' : 'var(--canvas-border)'}`,
+                }}
+              >
+                <span className="text-base mr-1">
+                  {type === 'none' && '─'}
+                  {type === 'end' && '─→'}
+                  {type === 'start' && '←─'}
+                  {type === 'both' && '←→'}
+                </span>
+                <span className="text-xs capitalize">{type}</span>
               </button>
             ))}
           </div>

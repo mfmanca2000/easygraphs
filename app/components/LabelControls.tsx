@@ -148,63 +148,76 @@ export default function LabelControls({
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-md overflow-hidden">
+    <div className="control-panel rounded-lg p-5">
       {/* Header */}
-      <div className="p-4 bg-linear-to-r from-blue-600 to-cyan-600 text-white">
-        <h2 className="text-lg font-semibold">Labels & Text</h2>
-      </div>
+      <h3 className="text-sm font-semibold mb-4" style={{
+        color: 'var(--architect-blue)',
+        fontFamily: 'JetBrains Mono, monospace',
+        letterSpacing: '0.05em',
+        textTransform: 'uppercase'
+      }}>
+        Labels & Text
+      </h3>
 
       {/* Tabs */}
-      <div className="flex border-b border-gray-200">
+      <div className="flex mb-4" style={{ borderBottom: '1.5px solid var(--canvas-border)' }}>
         <button
           onClick={() => setActiveTab('title')}
-          className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
-            activeTab === 'title'
-              ? 'text-blue-600 border-b-2 border-blue-600'
-              : 'text-gray-600 hover:text-gray-800'
-          }`}
+          className="flex-1 px-3 py-2 text-sm font-medium transition-colors"
+          style={{
+            color: activeTab === 'title' ? 'var(--architect-blue)' : 'var(--pencil-lead)',
+            borderBottom: activeTab === 'title' ? '2px solid var(--architect-blue)' : 'none',
+            opacity: activeTab === 'title' ? 1 : 0.6,
+            fontFamily: 'JetBrains Mono, monospace'
+          }}
         >
           Title
         </button>
         <button
           onClick={() => setActiveTab('axes')}
-          className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
-            activeTab === 'axes'
-              ? 'text-blue-600 border-b-2 border-blue-600'
-              : 'text-gray-600 hover:text-gray-800'
-          }`}
+          className="flex-1 px-3 py-2 text-sm font-medium transition-colors"
+          style={{
+            color: activeTab === 'axes' ? 'var(--architect-blue)' : 'var(--pencil-lead)',
+            borderBottom: activeTab === 'axes' ? '2px solid var(--architect-blue)' : 'none',
+            opacity: activeTab === 'axes' ? 1 : 0.6,
+            fontFamily: 'JetBrains Mono, monospace'
+          }}
         >
           Axes
         </button>
         <button
           onClick={() => setActiveTab('elements')}
-          className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
-            activeTab === 'elements'
-              ? 'text-blue-600 border-b-2 border-blue-600'
-              : 'text-gray-600 hover:text-gray-800'
-          }`}
+          className="flex-1 px-3 py-2 text-sm font-medium transition-colors"
+          style={{
+            color: activeTab === 'elements' ? 'var(--architect-blue)' : 'var(--pencil-lead)',
+            borderBottom: activeTab === 'elements' ? '2px solid var(--architect-blue)' : 'none',
+            opacity: activeTab === 'elements' ? 1 : 0.6,
+            fontFamily: 'JetBrains Mono, monospace'
+          }}
         >
           Elements
         </button>
         <button
           onClick={() => setActiveTab('textboxes')}
-          className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
-            activeTab === 'textboxes'
-              ? 'text-blue-600 border-b-2 border-blue-600'
-              : 'text-gray-600 hover:text-gray-800'
-          }`}
+          className="flex-1 px-3 py-2 text-sm font-medium transition-colors"
+          style={{
+            color: activeTab === 'textboxes' ? 'var(--architect-blue)' : 'var(--pencil-lead)',
+            borderBottom: activeTab === 'textboxes' ? '2px solid var(--architect-blue)' : 'none',
+            opacity: activeTab === 'textboxes' ? 1 : 0.6,
+            fontFamily: 'JetBrains Mono, monospace'
+          }}
         >
           Text Boxes
         </button>
       </div>
 
       {/* Tab Content */}
-      <div className="p-4 space-y-4 max-h-96 overflow-y-auto">
+      <div className="space-y-4 max-h-96 overflow-y-auto">
         {/* Title Tab */}
         {activeTab === 'title' && (
-          <div className="space-y-3">
+          <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="text-sm font-medium block mb-2" style={{ color: 'var(--pencil-lead)' }}>
                 Title Text
               </label>
               <div className="flex gap-2">
@@ -214,11 +227,21 @@ export default function LabelControls({
                   onChange={(e) => handleTitleChange('text', e.target.value)}
                   onBlur={handleTitleBlur}
                   placeholder="Enter graph title"
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="flex-1 px-3 py-2 text-sm rounded-md focus:outline-none"
+                  style={{
+                    border: '1.5px solid var(--canvas-border)',
+                    fontFamily: 'JetBrains Mono, monospace',
+                    color: 'var(--pencil-lead)'
+                  }}
                 />
                 <button
                   onClick={onCharacterPaletteOpen}
-                  className="px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded border border-gray-300 text-lg"
+                  className="px-3 py-2 rounded-md text-lg transition-all"
+                  style={{
+                    background: 'transparent',
+                    border: '1.5px solid var(--canvas-border)',
+                    color: 'var(--pencil-lead)'
+                  }}
                   title="Open Character Palette"
                 >
                   Σ
@@ -227,8 +250,11 @@ export default function LabelControls({
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Font Size: {labels.title.fontSize}px
+              <label className="text-sm font-medium block mb-2" style={{ color: 'var(--pencil-lead)' }}>
+                Font Size
+                <span className="ml-2 font-mono" style={{ color: 'var(--architect-orange)' }}>
+                  {labels.title.fontSize}px
+                </span>
               </label>
               <Slider
                 min={12}
@@ -242,7 +268,7 @@ export default function LabelControls({
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="text-sm font-medium block mb-2" style={{ color: 'var(--pencil-lead)' }}>
                 Color
               </label>
               <input
@@ -250,7 +276,8 @@ export default function LabelControls({
                 value={labels.title.color}
                 onChange={(e) => handleTitleChange('color', e.target.value)}
                 onBlur={handleTitleBlur}
-                className="w-full h-10 rounded border border-gray-300 cursor-pointer"
+                className="w-full h-10 rounded-md cursor-pointer"
+                style={{ border: '1.5px solid var(--canvas-border)' }}
               />
             </div>
           </div>
@@ -258,9 +285,9 @@ export default function LabelControls({
 
         {/* Axes Tab */}
         {activeTab === 'axes' && (
-          <div className="space-y-3">
+          <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="text-sm font-medium block mb-2" style={{ color: 'var(--pencil-lead)' }}>
                 X-Axis Label
               </label>
               <div className="flex gap-2">
@@ -270,11 +297,21 @@ export default function LabelControls({
                   onChange={(e) => handleAxisLabelChange('xLabel', e.target.value)}
                   onBlur={handleAxisBlur}
                   placeholder="e.g., Time (s)"
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="flex-1 px-3 py-2 text-sm rounded-md focus:outline-none"
+                  style={{
+                    border: '1.5px solid var(--canvas-border)',
+                    fontFamily: 'JetBrains Mono, monospace',
+                    color: 'var(--pencil-lead)'
+                  }}
                 />
                 <button
                   onClick={onCharacterPaletteOpen}
-                  className="px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded border border-gray-300 text-lg"
+                  className="px-3 py-2 rounded-md text-lg transition-all"
+                  style={{
+                    background: 'transparent',
+                    border: '1.5px solid var(--canvas-border)',
+                    color: 'var(--pencil-lead)'
+                  }}
                   title="Open Character Palette"
                 >
                   Σ
@@ -283,7 +320,7 @@ export default function LabelControls({
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="text-sm font-medium block mb-2" style={{ color: 'var(--pencil-lead)' }}>
                 Y-Axis Label
               </label>
               <div className="flex gap-2">
@@ -293,11 +330,21 @@ export default function LabelControls({
                   onChange={(e) => handleAxisLabelChange('yLabel', e.target.value)}
                   onBlur={handleAxisBlur}
                   placeholder="e.g., Value"
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="flex-1 px-3 py-2 text-sm rounded-md focus:outline-none"
+                  style={{
+                    border: '1.5px solid var(--canvas-border)',
+                    fontFamily: 'JetBrains Mono, monospace',
+                    color: 'var(--pencil-lead)'
+                  }}
                 />
                 <button
                   onClick={onCharacterPaletteOpen}
-                  className="px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded border border-gray-300 text-lg"
+                  className="px-3 py-2 rounded-md text-lg transition-all"
+                  style={{
+                    background: 'transparent',
+                    border: '1.5px solid var(--canvas-border)',
+                    color: 'var(--pencil-lead)'
+                  }}
                   title="Open Character Palette"
                 >
                   Σ
@@ -306,8 +353,11 @@ export default function LabelControls({
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Font Size: {labels.axisLabels.fontSize}px
+              <label className="text-sm font-medium block mb-2" style={{ color: 'var(--pencil-lead)' }}>
+                Font Size
+                <span className="ml-2 font-mono" style={{ color: 'var(--architect-orange)' }}>
+                  {labels.axisLabels.fontSize}px
+                </span>
               </label>
               <Slider
                 min={10}
@@ -321,7 +371,7 @@ export default function LabelControls({
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="text-sm font-medium block mb-2" style={{ color: 'var(--pencil-lead)' }}>
                 Color
               </label>
               <input
@@ -329,7 +379,8 @@ export default function LabelControls({
                 value={labels.axisLabels.color}
                 onChange={(e) => handleAxisLabelChange('color', e.target.value)}
                 onBlur={handleAxisBlur}
-                className="w-full h-10 rounded border border-gray-300 cursor-pointer"
+                className="w-full h-10 rounded-md cursor-pointer"
+                style={{ border: '1.5px solid var(--canvas-border)' }}
               />
             </div>
           </div>
@@ -337,13 +388,15 @@ export default function LabelControls({
 
         {/* Elements Tab */}
         {activeTab === 'elements' && (
-          <div className="space-y-3">
-            <p className="text-sm text-gray-600">
+          <div className="space-y-4">
+            <p className="text-sm" style={{ color: 'var(--pencil-lead)', opacity: 0.7 }}>
               Add labels to specific elements on the graph.
             </p>
 
             {elements.length === 0 ? (
-              <p className="text-sm text-gray-500 italic">No elements to label yet.</p>
+              <p className="text-sm italic" style={{ color: 'var(--pencil-lead)', opacity: 0.5 }}>
+                No elements to label yet.
+              </p>
             ) : (
               <div className="space-y-2">
                 {elements.map((element, index) => {
@@ -351,22 +404,31 @@ export default function LabelControls({
                   const existingLabelIndex = labels.elementLabels.findIndex(l => l.elementId === index);
 
                   return (
-                    <div key={index} className="p-3 border border-gray-200 rounded">
+                    <div
+                      key={index}
+                      className="p-3 rounded-md"
+                      style={{ border: '1.5px solid var(--canvas-border)' }}
+                    >
                       <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-medium">
+                        <span className="text-sm font-medium" style={{
+                          color: 'var(--architect-blue)',
+                          fontFamily: 'JetBrains Mono, monospace'
+                        }}>
                           {element.type.charAt(0).toUpperCase() + element.type.slice(1)} #{index}
                         </span>
                         {existingLabel ? (
                           <button
                             onClick={() => handleRemoveElementLabel(existingLabelIndex)}
-                            className="text-xs text-red-600 hover:text-red-700"
+                            className="text-xs font-medium"
+                            style={{ color: '#E74C3C' }}
                           >
                             Remove Label
                           </button>
                         ) : (
                           <button
                             onClick={() => handleAddElementLabel(index)}
-                            className="text-xs text-blue-600 hover:text-blue-700"
+                            className="text-xs font-medium"
+                            style={{ color: 'var(--architect-blue)' }}
                           >
                             Add Label
                           </button>
@@ -381,7 +443,12 @@ export default function LabelControls({
                             onChange={(e) => handleElementLabelChange(existingLabelIndex, 'text', e.target.value)}
                             onBlur={handleElementLabelBlur}
                             placeholder="Label text"
-                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                            className="w-full px-3 py-2 text-sm rounded-md focus:outline-none"
+                            style={{
+                              border: '1.5px solid var(--canvas-border)',
+                              fontFamily: 'JetBrains Mono, monospace',
+                              color: 'var(--pencil-lead)'
+                            }}
                           />
                         </div>
                       )}
@@ -395,37 +462,53 @@ export default function LabelControls({
 
         {/* Text Boxes Tab */}
         {activeTab === 'textboxes' && (
-          <div className="space-y-3">
+          <div className="space-y-4">
             <button
               onClick={handleCreateTextBox}
-              className="w-full px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+              className="w-full px-4 py-2.5 rounded-md text-sm font-medium transition-all"
+              style={{
+                background: 'var(--architect-green)',
+                color: 'white',
+                border: 'none'
+              }}
             >
               + Create Text Box
             </button>
 
             {labels.textBoxes.length === 0 ? (
-              <p className="text-sm text-gray-500 italic">No text boxes yet.</p>
+              <p className="text-sm italic" style={{ color: 'var(--pencil-lead)', opacity: 0.5 }}>
+                No text boxes yet.
+              </p>
             ) : (
               <div className="space-y-2">
                 {labels.textBoxes.map((textBox) => (
                   <div
                     key={textBox.id}
-                    className={`p-3 border rounded ${
-                      editingTextBoxId === textBox.id
-                        ? 'border-blue-500 bg-blue-50'
-                        : 'border-gray-200'
-                    }`}
+                    className="p-3 rounded-md"
+                    style={{
+                      border: editingTextBoxId === textBox.id
+                        ? '1.5px solid var(--architect-blue)'
+                        : '1.5px solid var(--canvas-border)',
+                      background: editingTextBoxId === textBox.id
+                        ? 'rgba(43, 95, 130, 0.05)'
+                        : 'transparent'
+                    }}
                   >
                     <div className="flex items-center justify-between mb-2">
                       <button
                         onClick={() => setEditingTextBoxId(editingTextBoxId === textBox.id ? null : textBox.id)}
                         className="text-sm font-medium text-left flex-1"
+                        style={{
+                          color: 'var(--architect-blue)',
+                          fontFamily: 'JetBrains Mono, monospace'
+                        }}
                       >
                         {textBox.text.substring(0, 30)}{textBox.text.length > 30 ? '...' : ''}
                       </button>
                       <button
                         onClick={() => handleDeleteTextBox(textBox.id)}
-                        className="text-red-600 hover:text-red-700 ml-2"
+                        className="ml-2"
+                        style={{ color: '#E74C3C' }}
                         title="Delete text box"
                       >
                         <Trash2 size={18} />
@@ -433,18 +516,28 @@ export default function LabelControls({
                     </div>
 
                     {editingTextBoxId === textBox.id && (
-                      <div className="space-y-2">
+                      <div className="space-y-3">
                         <div className="flex gap-2">
                           <textarea
                             value={textBox.text}
                             onChange={(e) => handleTextBoxChange(textBox.id, 'text', e.target.value)}
                             onBlur={handleTextBoxBlur}
                             rows={3}
-                            className="flex-1 px-2 py-1 text-sm border border-gray-300 rounded resize-none"
+                            className="flex-1 px-3 py-2 text-sm rounded-md resize-none focus:outline-none"
+                            style={{
+                              border: '1.5px solid var(--canvas-border)',
+                              fontFamily: 'JetBrains Mono, monospace',
+                              color: 'var(--pencil-lead)'
+                            }}
                           />
                           <button
                             onClick={onCharacterPaletteOpen}
-                            className="px-2 bg-gray-100 hover:bg-gray-200 rounded border border-gray-300 text-lg self-start"
+                            className="px-2 rounded-md text-lg self-start transition-all"
+                            style={{
+                              background: 'transparent',
+                              border: '1.5px solid var(--canvas-border)',
+                              color: 'var(--pencil-lead)'
+                            }}
                             title="Open Character Palette"
                           >
                             Σ
@@ -452,8 +545,11 @@ export default function LabelControls({
                         </div>
 
                         <div>
-                          <label className="block text-xs text-gray-600 mb-1">
-                            Font Size: {textBox.fontSize}px
+                          <label className="text-sm font-medium block mb-2" style={{ color: 'var(--pencil-lead)' }}>
+                            Font Size
+                            <span className="ml-2 font-mono" style={{ color: 'var(--architect-orange)' }}>
+                              {textBox.fontSize}px
+                            </span>
                           </label>
                           <Slider
                             min={10}
@@ -468,23 +564,35 @@ export default function LabelControls({
 
                         <div className="grid grid-cols-2 gap-2">
                           <div>
-                            <label className="block text-xs text-gray-600 mb-1">Text Color</label>
+                            <label className="text-xs font-medium block mb-1.5" style={{
+                              color: 'var(--pencil-lead)',
+                              opacity: 0.7
+                            }}>
+                              Text Color
+                            </label>
                             <input
                               type="color"
                               value={textBox.color}
                               onChange={(e) => handleTextBoxChange(textBox.id, 'color', e.target.value)}
                               onBlur={handleTextBoxBlur}
-                              className="w-full h-8 rounded border border-gray-300"
+                              className="w-full h-8 rounded-md cursor-pointer"
+                              style={{ border: '1.5px solid var(--canvas-border)' }}
                             />
                           </div>
                           <div>
-                            <label className="block text-xs text-gray-600 mb-1">Border Color</label>
+                            <label className="text-xs font-medium block mb-1.5" style={{
+                              color: 'var(--pencil-lead)',
+                              opacity: 0.7
+                            }}>
+                              Border Color
+                            </label>
                             <input
                               type="color"
                               value={textBox.borderColor}
                               onChange={(e) => handleTextBoxChange(textBox.id, 'borderColor', e.target.value)}
                               onBlur={handleTextBoxBlur}
-                              className="w-full h-8 rounded border border-gray-300"
+                              className="w-full h-8 rounded-md cursor-pointer"
+                              style={{ border: '1.5px solid var(--canvas-border)' }}
                             />
                           </div>
                         </div>

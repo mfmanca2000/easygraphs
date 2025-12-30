@@ -34,6 +34,7 @@ export interface GraphElement {
   showProjection?: boolean;  // For point type - whether to show projection lines
   lineStyle?: 'solid' | 'dashed' | 'dotted';  // Line style - default: 'solid'
   opacity?: number;  // Opacity 0-1 - default: 1
+  arrowType?: 'none' | 'end' | 'start' | 'both';  // Arrow endpoints - default: 'none'
 }
 
 export interface FillArea {
@@ -190,6 +191,7 @@ export interface GraphCanvasProps {
   strokeWidth: number;
   lineStyle: 'solid' | 'dashed' | 'dotted';
   opacity: number;
+  arrowType: 'none' | 'end' | 'start' | 'both';
   drawMode: DrawMode;
   scale: { x: number; y: number };
   onCoordinateClick?: (point: Point) => void;
@@ -241,6 +243,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     strokeWidth,
     lineStyle,
     opacity,
+    arrowType,
     drawMode,
     scale,
     onCoordinateClick,
@@ -905,6 +908,72 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     }
   }, []);
 
+  // Draw arrow at end of line
+  const drawArrow = useCallback((
+    ctx: CanvasRenderingContext2D,
+    fromX: number,
+    fromY: number,
+    toX: number,
+    toY: number,
+    arrowSize: number,
+    color: string,
+    opacity: number
+  ) => {
+    // Calculate arrow direction angle
+    const angle = Math.atan2(toY - fromY, toX - fromX);
+
+    ctx.save();
+    ctx.globalAlpha = opacity;
+    ctx.fillStyle = color;
+
+    // Translate to arrow tip
+    ctx.translate(toX, toY);
+    ctx.rotate(angle);
+
+    // Draw filled triangle
+    ctx.beginPath();
+    ctx.moveTo(0, 0);                          // Arrow tip
+    ctx.lineTo(-arrowSize * 1.5, arrowSize);   // Bottom
+    ctx.lineTo(-arrowSize * 1.5, -arrowSize);  // Top
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.restore();
+  }, []);
+
+  // Draw arrow at start of line
+  const drawArrowAtStart = useCallback((
+    ctx: CanvasRenderingContext2D,
+    fromX: number,
+    fromY: number,
+    toX: number,
+    toY: number,
+    arrowSize: number,
+    color: string,
+    opacity: number
+  ) => {
+    // Calculate arrow direction angle (reversed)
+    const angle = Math.atan2(toY - fromY, toX - fromX);
+
+    ctx.save();
+    ctx.globalAlpha = opacity;
+    ctx.fillStyle = color;
+
+    // Translate to start point and rotate 180 degrees
+    ctx.translate(fromX, fromY);
+    ctx.rotate(angle + Math.PI);
+
+    // Draw filled triangle
+    ctx.beginPath();
+    ctx.moveTo(0, 0);                          // Arrow tip
+    ctx.lineTo(-arrowSize * 1.5, arrowSize);   // Bottom
+    ctx.lineTo(-arrowSize * 1.5, -arrowSize);  // Top
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.restore();
+  }, []);
+
   // Draw a line element
   const drawLine = useCallback((ctx: CanvasRenderingContext2D, element: GraphElement) => {
     if (element.points.length < 2) return;
@@ -925,10 +994,21 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     ctx.lineTo(end.x, end.y);
     ctx.stroke();
 
+    // Draw arrows if configured
+    const arrowType = element.arrowType || 'none';
+    const arrowSize = Math.max(3, Math.min(20, element.lineWidth * 0.75));
+
+    if (arrowType === 'end' || arrowType === 'both') {
+      drawArrow(ctx, start.x, start.y, end.x, end.y, arrowSize, element.color, element.opacity ?? 1);
+    }
+    if (arrowType === 'start' || arrowType === 'both') {
+      drawArrowAtStart(ctx, start.x, start.y, end.x, end.y, arrowSize, element.color, element.opacity ?? 1);
+    }
+
     // Reset to defaults
     ctx.globalAlpha = 1;
     ctx.setLineDash([]);
-  }, [graphToCanvas, applyLineStyle]);
+  }, [graphToCanvas, applyLineStyle, drawArrow, drawArrowAtStart]);
 
   // Draw a bezier curve element
   const drawBezier = useCallback((ctx: CanvasRenderingContext2D, element: GraphElement) => {
@@ -951,10 +1031,23 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     ctx.quadraticCurveTo(control.x, control.y, end.x, end.y);
     ctx.stroke();
 
+    // Draw arrows if configured
+    const arrowType = element.arrowType || 'none';
+    const arrowSize = Math.max(3, Math.min(20, element.lineWidth * 0.75));
+
+    if (arrowType === 'end' || arrowType === 'both') {
+      // Arrow at end: use tangent from control point to end point
+      drawArrow(ctx, control.x, control.y, end.x, end.y, arrowSize, element.color, element.opacity ?? 1);
+    }
+    if (arrowType === 'start' || arrowType === 'both') {
+      // Arrow at start: use tangent from start point to control point
+      drawArrowAtStart(ctx, start.x, start.y, control.x, control.y, arrowSize, element.color, element.opacity ?? 1);
+    }
+
     // Reset to defaults
     ctx.globalAlpha = 1;
     ctx.setLineDash([]);
-  }, [graphToCanvas, applyLineStyle]);
+  }, [graphToCanvas, applyLineStyle, drawArrow, drawArrowAtStart]);
 
   // Draw a point element
   const drawPoint = useCallback((ctx: CanvasRenderingContext2D, element: GraphElement) => {
@@ -1122,10 +1215,29 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
 
     ctx.stroke();
 
+    // Draw arrows if configured
+    const arrowType = element.arrowType || 'none';
+    const arrowSize = Math.max(3, Math.min(20, element.lineWidth * 0.75));
+
+    if (canvasPoints.length >= 2) {
+      if (arrowType === 'end' || arrowType === 'both') {
+        // Arrow at end: use direction from second-to-last to last point
+        const secondLast = canvasPoints[canvasPoints.length - 2];
+        const last = canvasPoints[canvasPoints.length - 1];
+        drawArrow(ctx, secondLast.x, secondLast.y, last.x, last.y, arrowSize, element.color, element.opacity ?? 1);
+      }
+      if (arrowType === 'start' || arrowType === 'both') {
+        // Arrow at start: use direction from first to second point
+        const first = canvasPoints[0];
+        const second = canvasPoints[1];
+        drawArrowAtStart(ctx, first.x, first.y, second.x, second.y, arrowSize, element.color, element.opacity ?? 1);
+      }
+    }
+
     // Reset to defaults
     ctx.globalAlpha = 1;
     ctx.setLineDash([]);
-  }, [graphToCanvas, simplifyPoints, applyLineStyle]);
+  }, [graphToCanvas, simplifyPoints, applyLineStyle, drawArrow, drawArrowAtStart]);
 
   // Draw a function curve
   const drawFunction = useCallback((ctx: CanvasRenderingContext2D, element: GraphElement) => {
@@ -1515,6 +1627,31 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
               ctx.stroke();
             }
           });
+        } else if (selectedElement.type === 'function') {
+          // Draw a glow around first and last points
+          if (selectedElement.points && selectedElement.points.length > 0) {
+            [0, selectedElement.points.length - 1].forEach(idx => {
+              if (idx < selectedElement.points.length) {
+                const point = selectedElement.points[idx];
+                const canvasPoint = graphToCanvas(point.x, point.y);
+
+                // Outer glow
+                ctx.fillStyle = 'rgba(230, 126, 34, 0.3)';
+                ctx.beginPath();
+                ctx.arc(canvasPoint.x, canvasPoint.y, 12, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Main circle
+                ctx.fillStyle = '#E67E22';
+                ctx.strokeStyle = '#FFFFFF';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.arc(canvasPoint.x, canvasPoint.y, 8, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+              }
+            });
+          }
         } else if (selectedElement.type === 'point') {
           // Draw selection glow around point
           const point = selectedElement.points[0];
@@ -1963,7 +2100,8 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
           color: strokeColor,
           lineWidth: strokeWidth,
           lineStyle: lineStyle,
-          opacity: opacity
+          opacity: opacity,
+          arrowType: arrowType
         };
         setElements(prev => [...prev, newElement]);
         setActionHistory(prev => [...prev, { type: 'element' }]);
@@ -2493,7 +2631,8 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
         color: strokeColor,
         lineWidth: strokeWidth,
         lineStyle: lineStyle,
-        opacity: opacity
+        opacity: opacity,
+        arrowType: arrowType
       };
       setElements(prev => [...prev, newElement]);
       setActionHistory(prev => [...prev, { type: 'element' }]);
@@ -2509,7 +2648,8 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
           color: strokeColor,
           lineWidth: strokeWidth,
           lineStyle: lineStyle,
-          opacity: opacity
+          opacity: opacity,
+          arrowType: arrowType
         };
         setElements(prev => [...prev, newElement]);
         setActionHistory(prev => [...prev, { type: 'element' }]);
@@ -2529,12 +2669,13 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       color: strokeColor,
       lineWidth: strokeWidth,
       lineStyle: lineStyle,
-      opacity: opacity
+      opacity: opacity,
+      arrowType: arrowType
     };
     setElements(prev => [...prev, newElement]);
     setActionHistory(prev => [...prev, { type: 'element' }]);
     setRedoHistory([]);
-  }, [strokeColor, strokeWidth, lineStyle, opacity]);
+  }, [strokeColor, strokeWidth, lineStyle, opacity, arrowType]);
 
   const addFillArea = useCallback((elementId: number, fillAbove: boolean, color: string, fillToAxis: boolean = false) => {
     setFillAreas(prev => [...prev, { elementId, fillAbove, color, fillToAxis }]);
@@ -3344,7 +3485,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     return firstElementId !== undefined ? firstElementId : null;
   }, [selection]);
 
-  const updateSelectedElement = useCallback((color: string, lineWidth: number, addToHistory: boolean = false, previousState?: GraphElement, lineStyleParam?: 'solid' | 'dashed' | 'dotted', opacityParam?: number) => {
+  const updateSelectedElement = useCallback((color: string, lineWidth: number, addToHistory: boolean = false, previousState?: GraphElement, lineStyleParam?: 'solid' | 'dashed' | 'dotted', opacityParam?: number, arrowTypeParam?: 'none' | 'end' | 'start' | 'both') => {
     if (selection.elementIds.size === 0) {
       return;
     }
@@ -3376,6 +3517,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
         element.lineWidth = lineWidth;
         if (lineStyleParam !== undefined) element.lineStyle = lineStyleParam;
         if (opacityParam !== undefined) element.opacity = opacityParam;
+        if (arrowTypeParam !== undefined) element.arrowType = arrowTypeParam;
         newElements[id] = element;
       });
       return newElements;
