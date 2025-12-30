@@ -604,7 +604,7 @@ export default function Home() {
 
 
           
-          <CollapsiblePanel id="session" title="Session Info" defaultExpanded={true}>
+          {/* <CollapsiblePanel id="session" title="Session Info" defaultExpanded={true}>
             <div className="grid grid-cols-3 gap-3" style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '0.875rem' }}>
               <div className="text-center">
                 <div style={{ color: 'var(--pencil-lead)', opacity: 0.6, fontSize: '0.75rem', marginBottom: '4px' }}>Elements</div>
@@ -634,7 +634,7 @@ export default function Home() {
                 </div>
               </div>
             </div>
-          </CollapsiblePanel>
+          </CollapsiblePanel> */}
         </MobileDrawer>
 
         {/* Main Layout */}
@@ -692,7 +692,7 @@ export default function Home() {
 
 
 
-            <CollapsiblePanel id="session" title="Session Info" defaultExpanded={true}>
+            {/* <CollapsiblePanel id="session" title="Session Info" defaultExpanded={true}>
               <div className="space-y-2" style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '0.875rem' }}>
                 <div className="flex justify-between items-center">
                   <span style={{ color: 'var(--pencil-lead)', opacity: 0.7 }}>Elements:</span>
@@ -723,7 +723,7 @@ export default function Home() {
                   </span>
                 </div>
               </div>
-            </CollapsiblePanel>
+            </CollapsiblePanel> */}
           </Sidebar>
 
           {/* Canvas Area - takes remaining space */}
