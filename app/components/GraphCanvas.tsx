@@ -214,7 +214,7 @@ export interface GraphCanvasHandle {
   exportToPDF: (pageSize?: string, orientation?: 'portrait' | 'landscape') => void;
   getSelectedElement: () => GraphElement | null;
   getSelectedElementId: () => number | null;
-  updateSelectedElement: (color: string, lineWidth: number, addToHistory?: boolean, previousState?: GraphElement, lineStyle?: 'solid' | 'dashed' | 'dotted', opacity?: number) => void;
+  updateSelectedElement: (color: string, lineWidth: number, addToHistory?: boolean, previousState?: GraphElement, lineStyle?: 'solid' | 'dashed' | 'dotted', opacity?: number, arrowType?: 'none' | 'end' | 'start' | 'both') => void;
   addModifyAction: (elementId: number, previousState: GraphElement) => void;
   getExportData: () => GraphExportData;
   importData: (data: GraphExportData) => void;
