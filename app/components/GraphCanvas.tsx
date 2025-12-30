@@ -297,6 +297,11 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
   const [elementDragStart, setElementDragStart] = useState<Point | null>(null);
   const selectedElementsOriginalStatesRef = useRef<Map<number, GraphElement> | null>(null);
 
+  // Track mouse down for drag threshold detection
+  const [mouseDownPosition, setMouseDownPosition] = useState<Point | null>(null);
+  const [mouseDownOnElementId, setMouseDownOnElementId] = useState<number | null>(null);
+  const [mouseDownWithCtrl, setMouseDownWithCtrl] = useState(false);
+
   // Selection box for multi-select
   const [selectionBox, setSelectionBox] = useState<{start: Point, end: Point} | null>(null);
   const [isDrawingSelectionBox, setIsDrawingSelectionBox] = useState(false);
@@ -2360,30 +2365,18 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     // Check if CTRL key is pressed
     const isCtrlPressed = 'ctrlKey' in e && e.ctrlKey;
 
-    if (isCtrlPressed) {
-      // If elements are selected, start multi-element translation instead of panning
-      if (selection.elementIds.size > 0) {
-        // Store original states for all selected elements for undo
-        const originalStates = new Map<number, GraphElement>();
-        selection.elementIds.forEach(elementId => {
-          if (elementId < elements.length) {
-            // Deep copy the element including all points and control point
-            const element = elements[elementId];
-            originalStates.set(elementId, {
-              ...element,
-              points: element.points.map(p => ({ ...p })),
-              controlPoint: element.controlPoint ? { ...element.controlPoint } : undefined
-            });
-          }
-        });
-
-        selectedElementsOriginalStatesRef.current = originalStates;
-        setDraggingEntireElement(true);
-        setElementDragStart({ x: canvasX, y: canvasY });
-        return;
+    // Track mouse down position and clicked element for drag threshold detection
+    if (drawMode === 'select') {
+      const clickedElementId = findClickedElement(canvasX, canvasY);
+      if (clickedElementId !== null) {
+        setMouseDownPosition({ x: canvasX, y: canvasY });
+        setMouseDownOnElementId(clickedElementId);
+        setMouseDownWithCtrl(isCtrlPressed);
       }
+    }
 
-      // Otherwise, start panning
+    // If CTRL is pressed but no element is clicked, start panning
+    if (isCtrlPressed && mouseDownOnElementId === null && selection.elementIds.size === 0) {
       setIsPanning(true);
       setPanStart({ x: canvasX, y: canvasY });
       return;
@@ -2557,6 +2550,76 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
     const { x: canvasX, y: canvasY } = getCanvasCoordinates(e);
     const firstElementId = Array.from(selection.elementIds)[0];
+
+    // Check for drag threshold (5px movement to start dragging)
+    if (mouseDownPosition && mouseDownOnElementId !== null && !draggingEntireElement) {
+      const deltaX = canvasX - mouseDownPosition.x;
+      const deltaY = canvasY - mouseDownPosition.y;
+      const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+      if (distance > 5) {
+        // Threshold met - start dragging
+        const clickedElementId = mouseDownOnElementId;
+
+        // Handle selection based on CTRL state
+        if (mouseDownWithCtrl) {
+          // Toggle the element in selection
+          const groupMembers = getGroupMembersForElement(clickedElementId);
+          const allMembersSelected = Array.from(groupMembers).every(id => selection.elementIds.has(id));
+
+          setSelection(prev => {
+            const newElementIds = new Set(prev.elementIds);
+            if (allMembersSelected) {
+              // Remove all group members from selection
+              groupMembers.forEach(id => newElementIds.delete(id));
+            } else {
+              // Add all group members to selection
+              groupMembers.forEach(id => newElementIds.add(id));
+            }
+            return { ...prev, elementIds: newElementIds };
+          });
+        } else {
+          // Replace selection with clicked element (if not already selected)
+          if (!selection.elementIds.has(clickedElementId)) {
+            const groupMembers = getGroupMembersForElement(clickedElementId);
+            setSelection({
+              elementIds: groupMembers,
+              textBoxIds: new Set()
+            });
+          }
+        }
+
+        // Set up dragging state after selection is updated
+        // We need to use setTimeout to ensure selection state is updated first
+        setTimeout(() => {
+          const currentSelection = selection.elementIds.size > 0 ? selection.elementIds : getGroupMembersForElement(clickedElementId);
+
+          // Store original states for all selected elements for undo
+          const originalStates = new Map<number, GraphElement>();
+          currentSelection.forEach(elementId => {
+            if (elementId < elements.length) {
+              const element = elements[elementId];
+              originalStates.set(elementId, {
+                ...element,
+                points: element.points.map(p => ({ ...p })),
+                controlPoint: element.controlPoint ? { ...element.controlPoint } : undefined
+              });
+            }
+          });
+
+          selectedElementsOriginalStatesRef.current = originalStates;
+          setDraggingEntireElement(true);
+          setElementDragStart({ x: canvasX, y: canvasY });
+        }, 0);
+
+        // Clear mouse down tracking
+        setMouseDownPosition(null);
+        setMouseDownOnElementId(null);
+        setMouseDownWithCtrl(false);
+
+        return;
+      }
+    }
 
     // Handle panning
     if (isPanning && panStart) {
@@ -2919,6 +2982,11 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       setDraggingControl(false);
       setDraggingControl2(false);
     }
+
+    // Clean up mouse down tracking state
+    setMouseDownPosition(null);
+    setMouseDownOnElementId(null);
+    setMouseDownWithCtrl(false);
   };
 
   // Public methods exposed via ref
