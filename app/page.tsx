@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import { flushSync } from 'react-dom';
 import GraphCanvas, { DrawMode, Point, GraphCanvasHandle, GraphElement, EasyGraphsExport, GraphLabels, DEFAULT_LABELS } from './components/GraphCanvas';
 import Toolbar from './components/Toolbar';
 import ScaleControls from './components/ScaleControls';
@@ -30,6 +31,11 @@ export default function Home() {
   const [labels, setLabels] = useState<GraphLabels>(DEFAULT_LABELS);
   const [showCharacterPalette, setShowCharacterPalette] = useState(false);
   const [hasSelection, setHasSelection] = useState(false);
+  const [currentSelection, setCurrentSelection] = useState<{elementIds: Set<number>, textBoxIds: Set<string>}>({
+    elementIds: new Set(),
+    textBoxIds: new Set()
+  });
+  const [currentGroups, setCurrentGroups] = useState<any[]>([]);
   const isUpdatingFromSelectionRef = useRef(false);
 
   // Responsive canvas sizing
@@ -165,6 +171,32 @@ export default function Home() {
     }
   };
 
+  const handleGroup = () => {
+    if (canvasRef.current) {
+      canvasRef.current.groupSelection();
+
+      // Force synchronous state update to immediately recalculate button states
+      flushSync(() => {
+        const newSelection = canvasRef.current!.getSelection();
+        const newGroups = canvasRef.current!.getGroups() || [];
+
+        setCurrentSelection(newSelection);
+        setCurrentGroups(newGroups);
+      });
+    }
+  };
+
+  const handleUngroup = () => {
+    if (canvasRef.current) {
+      canvasRef.current.ungroupSelection();
+      // Force synchronous state update to immediately recalculate button states
+      flushSync(() => {
+        setCurrentSelection(canvasRef.current!.getSelection());
+        setCurrentGroups(canvasRef.current!.getGroups() || []);
+      });
+    }
+  };
+
   const handleAddLineByCoordinates = (start: Point, end: Point) => {
     if (canvasRef.current) {
       canvasRef.current.addLineByCoordinates(start, end);
@@ -231,7 +263,8 @@ export default function Home() {
       drawing: {
         elements: canvasData.elements,
         fillAreas: canvasData.fillAreas,
-        labels: canvasData.labels
+        labels: canvasData.labels,
+        groups: canvasData.groups
       },
       settings: {
         strokeColor,
@@ -286,7 +319,8 @@ export default function Home() {
             elements: importData.drawing.elements,
             fillAreas: importData.drawing.fillAreas,
             panOffset: importData.view.panOffset,
-            labels: importData.drawing.labels || DEFAULT_LABELS
+            labels: importData.drawing.labels || DEFAULT_LABELS,
+            groups: (importData.drawing as any).groups || []
           });
         }
 
@@ -336,6 +370,10 @@ export default function Home() {
       // Update hasSelection based on current selection state
       const selection = canvasRef.current.getSelection();
       setHasSelection(selection.elementIds.size > 0 || selection.textBoxIds.size > 0);
+
+      // Update selection and groups state for reactive canGroup/canUngroup
+      setCurrentSelection(selection);
+      setCurrentGroups(canvasRef.current.getGroups() || []);
     }
   };
 
@@ -378,6 +416,17 @@ export default function Home() {
     // Update page state when labels change from canvas interactions
     setLabels(newLabels);
   };
+
+  // Calculate canGroup and canUngroup from state
+  const isAnySelectedInGroup = Array.from(currentSelection.elementIds).some(id =>
+    currentGroups.some(g => g.memberIds.includes(id))
+  );
+
+  const canGroup = hasSelection &&
+    currentSelection.elementIds.size >= 2 &&
+    !isAnySelectedInGroup;
+
+  const canUngroup = hasSelection && isAnySelectedInGroup;
 
   return (
     <div className="min-h-screen relative" style={{ paddingTop: '2rem', paddingBottom: '2rem' }}>
@@ -433,6 +482,10 @@ export default function Home() {
               onPaste={handlePaste}
               onDelete={handleDelete}
               hasSelection={hasSelection}
+              onGroup={handleGroup}
+              onUngroup={handleUngroup}
+              canGroup={canGroup}
+              canUngroup={canUngroup}
             />
 
             <ScaleControls

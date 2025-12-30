@@ -12,7 +12,9 @@ export type Action =
   | { type: 'modify'; elementId: number; previousState: GraphElement }
   | { type: 'label'; previousState: GraphLabels }
   | { type: 'paste'; previousElements: GraphElement[]; previousLabels: GraphLabels }
-  | { type: 'delete'; deletedElements: {id: number, element: GraphElement}[]; deletedTextBoxes: TextBox[]; previousElementsLength: number };
+  | { type: 'delete'; deletedElements: {id: number, element: GraphElement}[]; deletedTextBoxes: TextBox[]; previousElementsLength: number }
+  | { type: 'group'; previousGroups: Group[] }
+  | { type: 'ungroup'; previousGroups: Group[] };
 
 export interface Point {
   x: number;
@@ -106,11 +108,18 @@ export interface SelectionState {
   textBoxIds: Set<string>;
 }
 
+// Group interface
+export interface Group {
+  id: string;           // UUID for the group
+  memberIds: number[];  // Indices of elements in the elements array
+}
+
 // Clipboard data for copy/paste
 export interface ClipboardData {
   elements: GraphElement[];
   textBoxes: TextBox[];
   timestamp: number;
+  groupMemberships: Map<number, string>; // element index -> group ID
 }
 
 // Default labels
@@ -138,6 +147,7 @@ export interface GraphExportData {
   fillAreas: FillArea[];
   panOffset: Point;
   labels: GraphLabels;
+  groups: Group[];
 }
 
 export interface EasyGraphsExport {
@@ -215,6 +225,9 @@ export interface GraphCanvasHandle {
   pasteSelection: () => void;
   deleteSelection: () => void;
   getSelection: () => SelectionState;
+  groupSelection: () => void;
+  ungroupSelection: () => void;
+  getGroups: () => Group[];
 }
 
 const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function GraphCanvasComponent(props, ref) {
@@ -239,6 +252,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [elements, setElements] = useState<GraphElement[]>([]);
   const [fillAreas, setFillAreas] = useState<FillArea[]>([]);
+  const [groups, setGroups] = useState<Group[]>([]);
   const [actionHistory, setActionHistory] = useState<Action[]>([]);
   const [redoHistory, setRedoHistory] = useState<Action[]>([]);
   const [currentPoints, setCurrentPoints] = useState<Point[]>([]);
@@ -440,6 +454,12 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
              y + textBox.height < minY || y > maxY);
   }, [graphToCanvas]);
 
+  // Helper function to get all group members for an element
+  const getGroupMembersForElement = useCallback((elementId: number): Set<number> => {
+    const group = groups.find(g => g.memberIds.includes(elementId));
+    return group ? new Set(group.memberIds) : new Set([elementId]);
+  }, [groups]);
+
   // Find all objects within selection box
   const findObjectsInBox = useCallback((box: {start: Point, end: Point}): SelectionState => {
     const elementIds = new Set<number>();
@@ -451,14 +471,21 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       }
     });
 
+    // Expand selection to include all group members
+    const expandedElementIds = new Set<number>();
+    elementIds.forEach(id => {
+      const groupMembers = getGroupMembersForElement(id);
+      groupMembers.forEach(memberId => expandedElementIds.add(memberId));
+    });
+
     labels.textBoxes.forEach(textBox => {
       if (isTextBoxInSelectionBox(textBox, box)) {
         textBoxIds.add(textBox.id);
       }
     });
 
-    return { elementIds, textBoxIds };
-  }, [elements, labels.textBoxes, isElementInSelectionBox, isTextBoxInSelectionBox]);
+    return { elementIds: expandedElementIds, textBoxIds };
+  }, [elements, labels.textBoxes, isElementInSelectionBox, isTextBoxInSelectionBox, getGroupMembersForElement]);
 
   // Draw grid
   const drawGrid = useCallback((ctx: CanvasRenderingContext2D) => {
@@ -1534,7 +1561,54 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       ctx.fillStyle = 'rgba(43, 95, 130, 0.1)';
       ctx.fillRect(minX, minY, maxX - minX, maxY - minY);
     }
-  }, [drawGrid, elements, fillAreas, currentPoints, tempControlPoint, isDrawing, drawMode, strokeColor, strokeWidth, graphToCanvas, drawLine, drawBezier, drawFreehand, drawPoint, drawFunction, fillAreaForElement, selection, selectionBox, isDrawingSelectionBox, simplifyPoints, renderLabels]);
+
+    // Draw group bounding boxes for selected groups
+    groups.forEach(group => {
+      // Check if any group member is selected
+      const hasSelectedMember = group.memberIds.some(id => selection.elementIds.has(id));
+      if (!hasSelectedMember) return;
+
+      // Calculate bounding box of all member points (including control points)
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+      group.memberIds.forEach(id => {
+        if (id >= elements.length) return;
+        const element = elements[id];
+
+        // Include all points
+        element.points.forEach(point => {
+          const canvasPoint = graphToCanvas(point.x, point.y);
+          minX = Math.min(minX, canvasPoint.x);
+          minY = Math.min(minY, canvasPoint.y);
+          maxX = Math.max(maxX, canvasPoint.x);
+          maxY = Math.max(maxY, canvasPoint.y);
+        });
+
+        // Include control point for bezier curves
+        if (element.controlPoint) {
+          const canvasPoint = graphToCanvas(element.controlPoint.x, element.controlPoint.y);
+          minX = Math.min(minX, canvasPoint.x);
+          minY = Math.min(minY, canvasPoint.y);
+          maxX = Math.max(maxX, canvasPoint.x);
+          maxY = Math.max(maxY, canvasPoint.y);
+        }
+      });
+
+      // Add padding
+      const padding = 10;
+      minX -= padding;
+      minY -= padding;
+      maxX += padding;
+      maxY += padding;
+
+      // Draw light gray dotted bounding box
+      ctx.strokeStyle = '#CCCCCC';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([5, 5]);
+      ctx.strokeRect(minX, minY, maxX - minX, maxY - minY);
+      ctx.setLineDash([]);
+    });
+  }, [drawGrid, elements, fillAreas, currentPoints, tempControlPoint, isDrawing, drawMode, strokeColor, strokeWidth, graphToCanvas, drawLine, drawBezier, drawFreehand, drawPoint, drawFunction, fillAreaForElement, selection, selectionBox, isDrawingSelectionBox, simplifyPoints, renderLabels, groups]);
 
   // Re-render when dependencies change
   useEffect(() => {
@@ -1831,11 +1905,18 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
         // Toggle mode - add/remove from selection
         if (clickedElementId !== null) {
           setSelection(prev => {
+            const groupMembers = getGroupMembersForElement(clickedElementId);
             const newElementIds = new Set(prev.elementIds);
-            if (newElementIds.has(clickedElementId)) {
-              newElementIds.delete(clickedElementId);
+
+            // Check if all group members are already selected
+            const allMembersSelected = Array.from(groupMembers).every(id => newElementIds.has(id));
+
+            if (allMembersSelected) {
+              // Remove all group members from selection
+              groupMembers.forEach(id => newElementIds.delete(id));
             } else {
-              newElementIds.add(clickedElementId);
+              // Add all group members to selection
+              groupMembers.forEach(id => newElementIds.add(id));
             }
             return { ...prev, elementIds: newElementIds };
           });
@@ -1853,8 +1934,9 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       } else {
         // Replace selection
         if (clickedElementId !== null) {
+          const groupMembers = getGroupMembersForElement(clickedElementId);
           setSelection({
-            elementIds: new Set([clickedElementId]),
+            elementIds: groupMembers,
             textBoxIds: new Set()
           });
         } else if (clickedTextBoxId !== null) {
@@ -2654,12 +2736,32 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
           deletedTextBoxes: lastAction.deletedTextBoxes,
           previousElementsLength: lastAction.previousElementsLength
         }]);
+      } else if (lastAction.type === 'group') {
+        // Undo group: restore previous groups state
+        const currentGroups = [...groups];
+        setGroups(lastAction.previousGroups);
+
+        // Add to redo history
+        setRedoHistory(prev => [...prev, {
+          type: 'group',
+          previousGroups: currentGroups
+        }]);
+      } else if (lastAction.type === 'ungroup') {
+        // Undo ungroup: restore previous groups state
+        const currentGroups = [...groups];
+        setGroups(lastAction.previousGroups);
+
+        // Add to redo history
+        setRedoHistory(prev => [...prev, {
+          type: 'ungroup',
+          previousGroups: currentGroups
+        }]);
       }
     });
 
     // Reset the flag
     undoInProgressRef.current = false;
-  }, [actionHistory, elements, fillAreas, selection, labels]);
+  }, [actionHistory, elements, fillAreas, selection, labels, groups]);
 
   const redo = useCallback(() => {
     if (redoHistory.length === 0) {
@@ -2744,9 +2846,29 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
           deletedTextBoxes: deleteAction.deletedTextBoxes,
           previousElementsLength: deleteAction.previousElementsLength
         }]);
+      } else if (lastRedoAction.type === 'group') {
+        // Redo group
+        const groupAction = lastRedoAction as Action & { previousGroups: Group[] };
+        const currentGroups = [...groups];
+        setGroups(groupAction.previousGroups);
+
+        setActionHistory(prev => [...prev, {
+          type: 'group',
+          previousGroups: currentGroups
+        }]);
+      } else if (lastRedoAction.type === 'ungroup') {
+        // Redo ungroup
+        const ungroupAction = lastRedoAction as Action & { previousGroups: Group[] };
+        const currentGroups = [...groups];
+        setGroups(ungroupAction.previousGroups);
+
+        setActionHistory(prev => [...prev, {
+          type: 'ungroup',
+          previousGroups: currentGroups
+        }]);
       }
     });
-  }, [redoHistory, elements, labels]);
+  }, [redoHistory, elements, labels, groups]);
 
   const togglePointProjection = useCallback((elementId: number) => {
     if (elementId < 0 || elementId >= elements.length) return;
@@ -2773,6 +2895,77 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     setRedoHistory([]);
   }, [elements]);
 
+  // Group selected objects
+  const handleGroup = useCallback(() => {
+    // Check: need at least 2 elements
+    if (selection.elementIds.size < 2) {
+      return;
+    }
+
+    // Check: no selected elements are already in a group (flat groups only)
+    const selectedIds = Array.from(selection.elementIds);
+    const isAnyInGroup = selectedIds.some(id =>
+      groups.some(g => g.memberIds.includes(id))
+    );
+
+    if (isAnyInGroup) {
+      return; // Can't group elements that are already in a group
+    }
+
+    // Create new group
+    const newGroup: Group = {
+      id: crypto.randomUUID(),
+      memberIds: selectedIds.sort((a, b) => a - b) // Sort for consistency
+    };
+
+    // Use flushSync to ensure state updates happen synchronously
+    flushSync(() => {
+      // Add to groups array
+      setGroups(prev => [...prev, newGroup]);
+
+      // Add to action history for undo
+      setActionHistory(prev => [...prev, {
+        type: 'group',
+        previousGroups: groups
+      }]);
+      setRedoHistory([]);
+    });
+  }, [selection.elementIds, groups]);
+
+  // Ungroup selected objects
+  const handleUngroup = useCallback(() => {
+    if (selection.elementIds.size === 0) {
+      return;
+    }
+
+    // Find groups containing any selected elements
+    const selectedIds = Array.from(selection.elementIds);
+    const groupsToRemove = groups.filter(g =>
+      g.memberIds.some(id => selectedIds.includes(id))
+    );
+
+    if (groupsToRemove.length === 0) {
+      return; // No groups to ungroup
+    }
+
+    // Remove those groups from groups array
+    const newGroups = groups.filter(g =>
+      !groupsToRemove.some(gr => gr.id === g.id)
+    );
+
+    // Use flushSync to ensure state updates happen synchronously
+    flushSync(() => {
+      setGroups(newGroups);
+
+      // Add to action history for undo
+      setActionHistory(prev => [...prev, {
+        type: 'ungroup',
+        previousGroups: groups
+      }]);
+      setRedoHistory([]);
+    });
+  }, [selection.elementIds, groups]);
+
   // Copy selected objects to clipboard
   const handleCopy = useCallback(() => {
     if (selection.elementIds.size === 0 && selection.textBoxIds.size === 0) {
@@ -2788,22 +2981,37 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       .map(id => labels.textBoxes.find(tb => tb.id === id))
       .filter(Boolean) as TextBox[];
 
+    // Create groupMemberships map
+    const groupMemberships = new Map<number, string>();
+    Array.from(selection.elementIds).forEach(id => {
+      const group = groups.find(g => g.memberIds.includes(id));
+      if (group) {
+        groupMemberships.set(id, group.id);
+      }
+    });
+
     const clipboardData: ClipboardData = {
       elements: selectedElements.map(el => ({ ...el, points: el.points.map(p => ({ ...p })), controlPoint: el.controlPoint ? { ...el.controlPoint } : undefined })),
       textBoxes: selectedTextBoxes.map(tb => ({ ...tb })),
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      groupMemberships
     };
 
     setClipboard(clipboardData);
 
     // Also copy to system clipboard as JSON
     try {
-      navigator.clipboard.writeText(JSON.stringify(clipboardData, null, 2))
+      // Convert Map to object for JSON serialization
+      const serializable = {
+        ...clipboardData,
+        groupMemberships: Object.fromEntries(groupMemberships)
+      };
+      navigator.clipboard.writeText(JSON.stringify(serializable, null, 2))
         .catch(err => console.warn('Failed to copy to system clipboard:', err));
     } catch (err) {
       console.warn('Failed to copy to system clipboard:', err);
     }
-  }, [selection, elements, labels.textBoxes]);
+  }, [selection, elements, labels.textBoxes, groups]);
 
   // Paste objects from clipboard
   const handlePaste = useCallback(() => {
@@ -2853,6 +3061,42 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
 
     setSelection({ elementIds: newElementIds, textBoxIds: newTextBoxIds });
 
+    // Recreate groups for pasted elements
+    if (clipboard.groupMemberships && clipboard.groupMemberships.size > 0) {
+      // Create oldToNewIndexMap: the old index in clipboard to new index in elements array
+      const copiedElementIds = Array.from(clipboard.groupMemberships.keys()).sort((a, b) => a - b);
+      const oldToNewIndexMap = new Map<number, number>();
+      copiedElementIds.forEach((oldId, idx) => {
+        oldToNewIndexMap.set(oldId, newElementStartIndex + idx);
+      });
+
+      // Group elements by their group IDs
+      const groupIdToMembers = new Map<string, number[]>();
+      clipboard.groupMemberships.forEach((groupId, oldIndex) => {
+        const newIndex = oldToNewIndexMap.get(oldIndex);
+        if (newIndex !== undefined) {
+          if (!groupIdToMembers.has(groupId)) {
+            groupIdToMembers.set(groupId, []);
+          }
+          groupIdToMembers.get(groupId)!.push(newIndex);
+        }
+      });
+
+      // Create new groups with new member IDs
+      const newGroups: Group[] = [];
+      groupIdToMembers.forEach((memberIds) => {
+        if (memberIds.length >= 2) {
+          newGroups.push({
+            id: crypto.randomUUID(),
+            memberIds: memberIds.sort((a, b) => a - b)
+          });
+        }
+      });
+
+      // Add new groups to groups array
+      setGroups(prev => [...prev, ...newGroups]);
+    }
+
     // Add to history
     setActionHistory(prev => [...prev, {
       type: 'paste',
@@ -2897,6 +3141,30 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       tb => !selection.textBoxIds.has(tb.id)
     );
     setLabels(prev => ({ ...prev, textBoxes: newTextBoxes }));
+
+    // Update groups: remove deleted element IDs and adjust indices
+    const deletedIds = new Set(selection.elementIds);
+    const newGroups = groups
+      .map(group => {
+        // Remove deleted element IDs from group
+        let updatedMemberIds = group.memberIds.filter(id => !deletedIds.has(id));
+
+        // Adjust remaining member IDs (shift down for deleted elements before them)
+        updatedMemberIds = updatedMemberIds.map(id => {
+          // Count how many deleted elements come before this one
+          const deletedBefore = Array.from(deletedIds).filter(delId => delId < id).length;
+          return id - deletedBefore;
+        });
+
+        return {
+          ...group,
+          memberIds: updatedMemberIds
+        };
+      })
+      // Filter out groups with < 2 members
+      .filter(group => group.memberIds.length >= 2);
+
+    setGroups(newGroups);
 
     // Clear selection
     setSelection({ elementIds: new Set(), textBoxIds: new Set() });
@@ -3027,9 +3295,10 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       elements: [...elements],
       fillAreas: [...fillAreas],
       panOffset: { ...panOffset },
-      labels: { ...labels }
+      labels: { ...labels },
+      groups: [...groups]
     };
-  }, [elements, fillAreas, panOffset, labels]);
+  }, [elements, fillAreas, panOffset, labels, groups]);
 
   const importData = useCallback((data: GraphExportData) => {
     // Clear current state
@@ -3044,6 +3313,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     setFillAreas(data.fillAreas || []);
     setPanOffset(data.panOffset || { x: 0, y: 0 });
     setLabels(data.labels || DEFAULT_LABELS); // Backward compatibility
+    setGroups(data.groups || []); // Backward compatibility
 
     // Rebuild action history for undo functionality
     const history: Action[] = [];
@@ -3074,41 +3344,51 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
   }, [selection]);
 
   const updateSelectedElement = useCallback((color: string, lineWidth: number, addToHistory: boolean = false, previousState?: GraphElement, lineStyleParam?: 'solid' | 'dashed' | 'dotted', opacityParam?: number) => {
-    // Update first selected element for backward compatibility
-    const firstElementId = Array.from(selection.elementIds)[0];
-    if (firstElementId === undefined || firstElementId >= elements.length) {
+    if (selection.elementIds.size === 0) {
       return;
     }
 
-    const currentElement = elements[firstElementId];
+    // Update ALL selected elements
+    const selectedIds = Array.from(selection.elementIds);
 
-    // Only update if something actually changed
-    if (currentElement.color === color &&
-        currentElement.lineWidth === lineWidth &&
-        currentElement.lineStyle === lineStyleParam &&
-        currentElement.opacity === opacityParam) {
+    // Check if valid
+    if (selectedIds.some(id => id >= elements.length)) {
       return;
+    }
+
+    // Store previous states for undo if needed
+    const previousStates: Array<{elementId: number, previousState: GraphElement}> = [];
+    if (addToHistory) {
+      selectedIds.forEach(id => {
+        previousStates.push({
+          elementId: id,
+          previousState: { ...elements[id] }
+        });
+      });
     }
 
     setElements(prev => {
       const newElements = [...prev];
-      const element = { ...newElements[firstElementId] };
-      element.color = color;
-      element.lineWidth = lineWidth;
-      if (lineStyleParam !== undefined) element.lineStyle = lineStyleParam;
-      if (opacityParam !== undefined) element.opacity = opacityParam;
-      newElements[firstElementId] = element;
+      selectedIds.forEach(id => {
+        const element = { ...newElements[id] };
+        element.color = color;
+        element.lineWidth = lineWidth;
+        if (lineStyleParam !== undefined) element.lineStyle = lineStyleParam;
+        if (opacityParam !== undefined) element.opacity = opacityParam;
+        newElements[id] = element;
+      });
       return newElements;
     });
 
-    // Only add modification to action history if requested
+    // Add modification actions to history
     if (addToHistory) {
-      const stateToSave = previousState || currentElement;
-      setActionHistory(prev => [...prev, {
-        type: 'modify',
-        elementId: firstElementId,
-        previousState: stateToSave
-      }]);
+      previousStates.forEach(({ elementId, previousState: prevState }) => {
+        setActionHistory(prev => [...prev, {
+          type: 'modify',
+          elementId,
+          previousState: prevState
+        }]);
+      });
       setRedoHistory([]);
     }
   }, [selection, elements]);
@@ -3209,8 +3489,11 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     copySelection: handleCopy,
     pasteSelection: handlePaste,
     deleteSelection: handleDelete,
-    getSelection: () => selection
-  }), [addLineByCoordinates, addFillArea, addFunction, clearCanvas, undo, redo, elements, exportToPNG, exportToJPEG, exportToPDF, getSelectedElement, getSelectedElementId, updateSelectedElement, addModifyAction, getExportData, importData, togglePointProjection, getLabels, updateLabels, addTextBox, deleteTextBox, selectTextBox, handleCopy, handlePaste, handleDelete, selection]);
+    getSelection: () => selection,
+    groupSelection: handleGroup,
+    ungroupSelection: handleUngroup,
+    getGroups: () => groups
+  }), [addLineByCoordinates, addFillArea, addFunction, clearCanvas, undo, redo, elements, exportToPNG, exportToJPEG, exportToPDF, getSelectedElement, getSelectedElementId, updateSelectedElement, addModifyAction, getExportData, importData, togglePointProjection, getLabels, updateLabels, addTextBox, deleteTextBox, selectTextBox, handleCopy, handlePaste, handleDelete, selection, handleGroup, handleUngroup, groups]);
 
   return (
     <canvas

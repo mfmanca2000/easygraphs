@@ -31,6 +31,10 @@ export interface ToolbarProps {
   onPaste: () => void;
   onDelete: () => void;
   hasSelection: boolean;
+  onGroup: () => void;
+  onUngroup: () => void;
+  canGroup: boolean;
+  canUngroup: boolean;
 }
 
 const PRESET_COLORS = [
@@ -65,7 +69,11 @@ export default function Toolbar({
   onCopy,
   onPaste,
   onDelete,
-  hasSelection
+  hasSelection,
+  onGroup,
+  onUngroup,
+  canGroup,
+  canUngroup
 }: ToolbarProps) {
   const [exportFormat, setExportFormat] = useState<'png' | 'jpeg' | 'pdf'>('png');
   const [jpegQuality, setJpegQuality] = useState(90);
@@ -468,6 +476,38 @@ export default function Toolbar({
                 title="Delete (Del/Backspace)"
               >
                 Delete
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={onGroup}
+                disabled={!canGroup}
+                className="px-3 py-2 rounded-md text-sm font-medium transition-all"
+                style={{
+                  background: canGroup ? 'var(--architect-blue)' : 'var(--graph-lines)',
+                  color: canGroup ? 'white' : 'var(--pencil-lead)',
+                  opacity: canGroup ? 1 : 0.5,
+                  cursor: canGroup ? 'pointer' : 'not-allowed',
+                  border: '1.5px solid var(--canvas-border)'
+                }}
+                title="Group selected elements"
+              >
+                Group
+              </button>
+              <button
+                onClick={onUngroup}
+                disabled={!canUngroup}
+                className="px-3 py-2 rounded-md text-sm font-medium transition-all"
+                style={{
+                  background: canUngroup ? 'var(--architect-blue)' : 'var(--graph-lines)',
+                  color: canUngroup ? 'white' : 'var(--pencil-lead)',
+                  opacity: canUngroup ? 1 : 0.5,
+                  cursor: canUngroup ? 'pointer' : 'not-allowed',
+                  border: '1.5px solid var(--canvas-border)'
+                }}
+                title="Ungroup selected elements"
+              >
+                Ungroup
               </button>
             </div>
           </div>
