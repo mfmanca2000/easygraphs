@@ -628,6 +628,12 @@ export default function Home() {
                 currentPoint={currentPoint}
                 selectedElement={selectedElement}
                 selectedElementId={selectedElementId}
+                selectedElements={currentSelection.elementIds.size > 0 ?
+                  Array.from(currentSelection.elementIds).map(id => ({
+                    id,
+                    element: elements[id]
+                  })).filter(item => item.element) : undefined
+                }
                 onTogglePointProjection={handleTogglePointProjection}
               />
             )}

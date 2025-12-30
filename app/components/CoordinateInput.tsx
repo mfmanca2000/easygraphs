@@ -8,10 +8,11 @@ export interface CoordinateInputProps {
   currentPoint?: Point;
   selectedElement?: GraphElement | null;
   selectedElementId?: number | null;
+  selectedElements?: Array<{ id: number; element: GraphElement }>;
   onTogglePointProjection?: (elementId: number) => void;
 }
 
-export default function CoordinateInput({ onAddLine, currentPoint, selectedElement, selectedElementId, onTogglePointProjection }: CoordinateInputProps) {
+export default function CoordinateInput({ onAddLine, currentPoint, selectedElement, selectedElementId, selectedElements, onTogglePointProjection }: CoordinateInputProps) {
   const [startX, setStartX] = useState('');
   const [startY, setStartY] = useState('');
   const [endX, setEndX] = useState('');
@@ -135,8 +136,162 @@ export default function CoordinateInput({ onAddLine, currentPoint, selectedEleme
         </button>
       </form>
 
-      {/* Selected Element Display */}
-      {selectedElement && selectedElementId !== null && (
+      {/* Selected Elements Display */}
+      {selectedElements && selectedElements.length > 0 ? (
+        <div className="mt-4 pt-4 border-t" style={{ borderColor: 'var(--graph-lines)' }}>
+          <p className="text-xs font-medium mb-3" style={{
+            color: 'var(--pencil-lead)',
+            opacity: 0.7,
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em'
+          }}>
+            Selected Elements ({selectedElements.length})
+          </p>
+          <div className="max-h-96 overflow-y-auto space-y-3">
+            {selectedElements.map(({ id, element }) => (
+              <div key={id} className="p-3 rounded-md" style={{
+                background: 'rgba(43, 95, 130, 0.05)',
+                border: '1px solid var(--graph-lines)'
+              }}>
+                <p className="text-xs font-semibold mb-2" style={{
+                  color: 'var(--architect-blue)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em'
+                }}>
+                  Element #{id} ({element.type})
+                </p>
+                <div className="space-y-2">
+                  {element.type === 'line' && (
+                    <>
+                      <div>
+                        <p className="text-xs mb-1" style={{ color: 'var(--pencil-lead)', opacity: 0.6 }}>Start</p>
+                        <div className="px-2 py-1 rounded text-xs" style={{
+                          background: 'rgba(230, 126, 34, 0.1)',
+                          border: '1px solid var(--architect-orange)',
+                          fontFamily: 'JetBrains Mono, monospace',
+                          color: 'var(--architect-orange)',
+                          fontWeight: 600
+                        }}>
+                          ({element.points[0].x.toFixed(2)}, {element.points[0].y.toFixed(2)})
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-xs mb-1" style={{ color: 'var(--pencil-lead)', opacity: 0.6 }}>End</p>
+                        <div className="px-2 py-1 rounded text-xs" style={{
+                          background: 'rgba(230, 126, 34, 0.1)',
+                          border: '1px solid var(--architect-orange)',
+                          fontFamily: 'JetBrains Mono, monospace',
+                          color: 'var(--architect-orange)',
+                          fontWeight: 600
+                        }}>
+                          ({element.points[1].x.toFixed(2)}, {element.points[1].y.toFixed(2)})
+                        </div>
+                      </div>
+                    </>
+                  )}
+                  {element.type === 'bezier' && (
+                    <>
+                      <div>
+                        <p className="text-xs mb-1" style={{ color: 'var(--pencil-lead)', opacity: 0.6 }}>Start</p>
+                        <div className="px-2 py-1 rounded text-xs" style={{
+                          background: 'rgba(230, 126, 34, 0.1)',
+                          border: '1px solid var(--architect-orange)',
+                          fontFamily: 'JetBrains Mono, monospace',
+                          color: 'var(--architect-orange)',
+                          fontWeight: 600
+                        }}>
+                          ({element.points[0].x.toFixed(2)}, {element.points[0].y.toFixed(2)})
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-xs mb-1" style={{ color: 'var(--pencil-lead)', opacity: 0.6 }}>End</p>
+                        <div className="px-2 py-1 rounded text-xs" style={{
+                          background: 'rgba(230, 126, 34, 0.1)',
+                          border: '1px solid var(--architect-orange)',
+                          fontFamily: 'JetBrains Mono, monospace',
+                          color: 'var(--architect-orange)',
+                          fontWeight: 600
+                        }}>
+                          ({element.points[1].x.toFixed(2)}, {element.points[1].y.toFixed(2)})
+                        </div>
+                      </div>
+                      {element.controlPoint && (
+                        <div>
+                          <p className="text-xs mb-1" style={{ color: 'var(--pencil-lead)', opacity: 0.6 }}>Control</p>
+                          <div className="px-2 py-1 rounded text-xs" style={{
+                            background: 'rgba(155, 89, 182, 0.1)',
+                            border: '1px solid #9B59B6',
+                            fontFamily: 'JetBrains Mono, monospace',
+                            color: '#9B59B6',
+                            fontWeight: 600
+                          }}>
+                            ({element.controlPoint.x.toFixed(2)}, {element.controlPoint.y.toFixed(2)})
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                  {element.type === 'point' && (
+                    <>
+                      <div>
+                        <p className="text-xs mb-1" style={{ color: 'var(--pencil-lead)', opacity: 0.6 }}>Location</p>
+                        <div className="px-2 py-1 rounded text-xs" style={{
+                          background: 'rgba(230, 126, 34, 0.1)',
+                          border: '1px solid var(--architect-orange)',
+                          fontFamily: 'JetBrains Mono, monospace',
+                          color: 'var(--architect-orange)',
+                          fontWeight: 600
+                        }}>
+                          ({element.points[0].x.toFixed(2)}, {element.points[0].y.toFixed(2)})
+                        </div>
+                      </div>
+                      {onTogglePointProjection && (
+                        <button
+                          onClick={() => onTogglePointProjection(id)}
+                          className="w-full mt-2 px-3 py-1.5 rounded text-xs font-medium transition-all"
+                          style={{
+                            background: element.showProjection ? 'var(--architect-orange)' : 'transparent',
+                            color: element.showProjection ? 'white' : 'var(--architect-orange)',
+                            border: `1px solid var(--architect-orange)`
+                          }}
+                        >
+                          {element.showProjection ? '✓ Hide' : '+ Show'} Projection
+                        </button>
+                      )}
+                    </>
+                  )}
+                  {element.type === 'freehand' && (
+                    <div>
+                      <p className="text-xs mb-1" style={{ color: 'var(--pencil-lead)', opacity: 0.6 }}>
+                        Path ({element.points.length} points)
+                      </p>
+                      <div className="text-xs px-2 py-1 rounded" style={{
+                        background: 'rgba(230, 126, 34, 0.05)',
+                        border: '1px solid var(--graph-lines)',
+                        fontFamily: 'JetBrains Mono, monospace',
+                        color: 'var(--architect-orange)'
+                      }}>
+                        Showing first 3 points
+                      </div>
+                      {element.points.slice(0, 3).map((point, idx) => (
+                        <div key={idx} className="px-2 py-1 rounded text-xs mt-1" style={{
+                          background: 'rgba(230, 126, 34, 0.05)',
+                          border: '1px solid var(--graph-lines)',
+                          fontFamily: 'JetBrains Mono, monospace',
+                          color: 'var(--architect-orange)',
+                          fontWeight: 600
+                        }}>
+                          P{idx}: ({point.x.toFixed(2)}, {point.y.toFixed(2)})
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : selectedElement && selectedElementId !== null && (
         <div className="mt-4 pt-4 border-t" style={{ borderColor: 'var(--graph-lines)' }}>
           <p className="text-xs font-medium mb-2" style={{
             color: 'var(--pencil-lead)',
