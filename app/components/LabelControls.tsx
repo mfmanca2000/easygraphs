@@ -1,7 +1,9 @@
 'use client';
 
 import { useState } from 'react';
+import { Trash2 } from 'lucide-react';
 import type { GraphLabels, GraphElement, ElementLabel, TextBox } from './GraphCanvas';
+import { Slider } from './ui/slider';
 
 interface LabelControlsProps {
   labels: GraphLabels;
@@ -148,7 +150,7 @@ export default function LabelControls({
   return (
     <div className="bg-white rounded-lg shadow-md overflow-hidden">
       {/* Header */}
-      <div className="p-4 bg-gradient-to-r from-blue-600 to-cyan-600 text-white">
+      <div className="p-4 bg-linear-to-r from-blue-600 to-cyan-600 text-white">
         <h2 className="text-lg font-semibold">Labels & Text</h2>
       </div>
 
@@ -228,14 +230,13 @@ export default function LabelControls({
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Font Size: {labels.title.fontSize}px
               </label>
-              <input
-                type="range"
-                min="12"
-                max="48"
-                value={labels.title.fontSize}
-                onChange={(e) => handleTitleChange('fontSize', Number(e.target.value))}
-                onMouseUp={handleTitleBlur}
-                onTouchEnd={handleTitleBlur}
+              <Slider
+                min={12}
+                max={48}
+                step={1}
+                value={[labels.title.fontSize]}
+                onValueChange={(value) => handleTitleChange('fontSize', value[0])}
+                onValueCommit={handleTitleBlur}
                 className="w-full"
               />
             </div>
@@ -308,14 +309,13 @@ export default function LabelControls({
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Font Size: {labels.axisLabels.fontSize}px
               </label>
-              <input
-                type="range"
-                min="10"
-                max="24"
-                value={labels.axisLabels.fontSize}
-                onChange={(e) => handleAxisLabelChange('fontSize', Number(e.target.value))}
-                onMouseUp={handleAxisBlur}
-                onTouchEnd={handleAxisBlur}
+              <Slider
+                min={10}
+                max={24}
+                step={1}
+                value={[labels.axisLabels.fontSize]}
+                onValueChange={(value) => handleAxisLabelChange('fontSize', value[0])}
+                onValueCommit={handleAxisBlur}
                 className="w-full"
               />
             </div>
@@ -425,10 +425,10 @@ export default function LabelControls({
                       </button>
                       <button
                         onClick={() => handleDeleteTextBox(textBox.id)}
-                        className="text-red-600 hover:text-red-700 text-lg leading-none ml-2"
+                        className="text-red-600 hover:text-red-700 ml-2"
                         title="Delete text box"
                       >
-                        🗑️
+                        <Trash2 size={18} />
                       </button>
                     </div>
 
@@ -455,14 +455,13 @@ export default function LabelControls({
                           <label className="block text-xs text-gray-600 mb-1">
                             Font Size: {textBox.fontSize}px
                           </label>
-                          <input
-                            type="range"
-                            min="10"
-                            max="32"
-                            value={textBox.fontSize}
-                            onChange={(e) => handleTextBoxChange(textBox.id, 'fontSize', Number(e.target.value))}
-                            onMouseUp={handleTextBoxBlur}
-                            onTouchEnd={handleTextBoxBlur}
+                          <Slider
+                            min={10}
+                            max={32}
+                            step={1}
+                            value={[textBox.fontSize]}
+                            onValueChange={(value) => handleTextBoxChange(textBox.id, 'fontSize', value[0])}
+                            onValueCommit={handleTextBoxBlur}
                             className="w-full"
                           />
                         </div>

@@ -16,6 +16,8 @@ export default function Home() {
   const [showAxisUnits, setShowAxisUnits] = useState(true);
   const [strokeColor, setStrokeColor] = useState('#000000');
   const [strokeWidth, setStrokeWidth] = useState(2);
+  const [lineStyle, setLineStyle] = useState<'solid' | 'dashed' | 'dotted'>('solid');
+  const [opacity, setOpacity] = useState(1);
   const [drawMode, setDrawMode] = useState<DrawMode>('line');
   const [scale, setScale] = useState({ x: 40, y: 40 });
   const [currentPoint, setCurrentPoint] = useState<Point | undefined>(undefined);
@@ -27,6 +29,7 @@ export default function Home() {
   const originalElementRef = useRef<GraphElement | null>(null);
   const [labels, setLabels] = useState<GraphLabels>(DEFAULT_LABELS);
   const [showCharacterPalette, setShowCharacterPalette] = useState(false);
+  const [hasSelection, setHasSelection] = useState(false);
 
   // Responsive canvas sizing
   useEffect(() => {
@@ -61,18 +64,12 @@ export default function Home() {
     if (selectedElement && selectedElementId !== null) {
       setStrokeColor(selectedElement.color);
       setStrokeWidth(selectedElement.lineWidth);
+      setLineStyle(selectedElement.lineStyle || 'solid');
+      setOpacity(selectedElement.opacity ?? 1);
       // Save original state when a new element is selected
       originalElementRef.current = { ...selectedElement };
     } else if (selectedElementId === null) {
-      // Selection cleared - finalize any pending edits
-      if (originalElementRef.current && canvasRef.current) {
-        const prevElementId = elements.findIndex(el =>
-          el.color === originalElementRef.current!.color &&
-          el.lineWidth === originalElementRef.current!.lineWidth
-        );
-        // Check if we need to add the final edit to history
-        // (this is handled when selection actually changes, not here)
-      }
+      // Selection cleared - clear original state
       originalElementRef.current = null;
     }
   }, [selectedElement, selectedElementId, elements]);
@@ -81,12 +78,18 @@ export default function Home() {
   useEffect(() => {
     if (selectedElementId !== null && canvasRef.current && selectedElement && originalElementRef.current) {
       // Check if values actually changed from current element state
-      if (selectedElement.color !== strokeColor || selectedElement.lineWidth !== strokeWidth) {
+      if (selectedElement.color !== strokeColor ||
+          selectedElement.lineWidth !== strokeWidth ||
+          selectedElement.lineStyle !== lineStyle ||
+          selectedElement.opacity !== opacity) {
         // Apply change without adding to history
-        canvasRef.current.updateSelectedElement(strokeColor, strokeWidth, false);
+        canvasRef.current.updateSelectedElement(strokeColor, strokeWidth, false, undefined, lineStyle, opacity);
       }
     }
-  }, [strokeColor, strokeWidth, selectedElementId, selectedElement]);
+    
+    // Note: selectedElement is intentionally excluded to avoid extra re-renders when the element updates
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [strokeColor, strokeWidth, lineStyle, opacity, selectedElementId]);
 
   // When selection changes, finalize any edits by adding a single entry to history
   const prevSelectedIdRef = useRef<number | null>(null);
@@ -101,7 +104,9 @@ export default function Home() {
         const currentState = elements[prevId];
         // Check if the element was actually modified
         if (currentState.color !== originalElementRef.current.color ||
-            currentState.lineWidth !== originalElementRef.current.lineWidth) {
+            currentState.lineWidth !== originalElementRef.current.lineWidth ||
+            currentState.lineStyle !== originalElementRef.current.lineStyle ||
+            currentState.opacity !== originalElementRef.current.opacity) {
           // Add a single modify action for all the changes made to the previous element
           canvasRef.current.addModifyAction(prevId, originalElementRef.current);
         }
@@ -127,6 +132,24 @@ export default function Home() {
     }
   };
 
+  const handleCopy = () => {
+    if (canvasRef.current) {
+      canvasRef.current.copySelection();
+    }
+  };
+
+  const handlePaste = () => {
+    if (canvasRef.current) {
+      canvasRef.current.pasteSelection();
+    }
+  };
+
+  const handleDelete = () => {
+    if (canvasRef.current) {
+      canvasRef.current.deleteSelection();
+    }
+  };
+
   const handleAddLineByCoordinates = (start: Point, end: Point) => {
     if (canvasRef.current) {
       canvasRef.current.addLineByCoordinates(start, end);
@@ -141,7 +164,7 @@ export default function Home() {
 
   const handleAddFunction = (formula: string, xMin: number, xMax: number, color: string, lineWidth: number) => {
     if (canvasRef.current) {
-      canvasRef.current.addFunction(formula, xMin, xMax, color, lineWidth);
+      canvasRef.current.addFunction(formula, xMin, xMax, color, lineWidth, lineStyle, opacity);
     }
   };
 
@@ -152,6 +175,18 @@ export default function Home() {
   const handleExport = () => {
     if (canvasRef.current) {
       canvasRef.current.exportToPNG();
+    }
+  };
+
+  const handleExportJPEG = (quality: number) => {
+    if (canvasRef.current) {
+      canvasRef.current.exportToJPEG(quality);
+    }
+  };
+
+  const handleExportPDF = (pageSize: string, orientation: 'portrait' | 'landscape') => {
+    if (canvasRef.current) {
+      canvasRef.current.exportToPDF(pageSize, orientation);
     }
   };
 
@@ -186,7 +221,9 @@ export default function Home() {
       settings: {
         strokeColor,
         strokeWidth,
-        drawMode
+        drawMode,
+        lineStyle,
+        opacity
       }
     };
 
@@ -259,6 +296,8 @@ export default function Home() {
           setStrokeColor(importData.settings.strokeColor);
           setStrokeWidth(importData.settings.strokeWidth);
           setDrawMode(importData.settings.drawMode);
+          setLineStyle(importData.settings.lineStyle || 'solid');
+          setOpacity(importData.settings.opacity ?? 1);
         }
 
         // Update element count
@@ -278,6 +317,10 @@ export default function Home() {
       const element = canvasRef.current.getSelectedElement();
       setSelectedElement(element);
       setSelectedElementId(elementId);
+
+      // Update hasSelection based on current selection state
+      const selection = canvasRef.current.getSelection();
+      setHasSelection(selection.elementIds.size > 0 || selection.textBoxIds.size > 0);
     }
   };
 
@@ -357,14 +400,24 @@ export default function Home() {
               onStrokeColorChange={setStrokeColor}
               strokeWidth={strokeWidth}
               onStrokeWidthChange={setStrokeWidth}
+              lineStyle={lineStyle}
+              onLineStyleChange={setLineStyle}
+              opacity={opacity}
+              onOpacityChange={setOpacity}
               drawMode={drawMode}
               onDrawModeChange={setDrawMode}
               onClear={handleClear}
               onUndo={handleUndo}
               onRedo={handleRedo}
               onExport={handleExport}
+              onExportJPEG={handleExportJPEG}
+              onExportPDF={handleExportPDF}
               onExportJSON={handleExportJSON}
               onImportJSON={handleImportJSON}
+              onCopy={handleCopy}
+              onPaste={handlePaste}
+              onDelete={handleDelete}
+              hasSelection={hasSelection}
             />
 
             <ScaleControls
@@ -427,6 +480,8 @@ export default function Home() {
                   showAxisUnits={showAxisUnits}
                   strokeColor={strokeColor}
                   strokeWidth={strokeWidth}
+                  lineStyle={lineStyle}
+                  opacity={opacity}
                   drawMode={drawMode}
                   scale={scale}
                   onCoordinateClick={handleCoordinateClick}
@@ -455,6 +510,10 @@ export default function Home() {
                       <li className="flex items-start gap-2">
                         <span style={{ color: 'var(--architect-orange)', fontWeight: 600 }}>→</span>
                         <span><strong>Select:</strong> Click to select, drag points to edit</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span style={{ color: 'var(--architect-orange)', fontWeight: 600 }}>→</span>
+                        <span><strong>Move:</strong> Select object, then CTRL + drag to translate</span>
                       </li>
                       <li className="flex items-start gap-2">
                         <span style={{ color: 'var(--architect-blue)', fontWeight: 600 }}>→</span>

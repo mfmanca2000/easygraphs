@@ -10,7 +10,9 @@ export type Action =
   | { type: 'element' }
   | { type: 'fill' }
   | { type: 'modify'; elementId: number; previousState: GraphElement }
-  | { type: 'label'; previousState: GraphLabels };
+  | { type: 'label'; previousState: GraphLabels }
+  | { type: 'paste'; previousElements: GraphElement[]; previousLabels: GraphLabels }
+  | { type: 'delete'; deletedElements: {id: number, element: GraphElement}[]; deletedTextBoxes: TextBox[]; previousElementsLength: number };
 
 export interface Point {
   x: number;
@@ -28,6 +30,8 @@ export interface GraphElement {
   xMax?: number;     // For function type
   pointSize?: number;  // For point type
   showProjection?: boolean;  // For point type - whether to show projection lines
+  lineStyle?: 'solid' | 'dashed' | 'dotted';  // Line style - default: 'solid'
+  opacity?: number;  // Opacity 0-1 - default: 1
 }
 
 export interface FillArea {
@@ -96,6 +100,19 @@ export interface GraphLabels {
   textBoxes: TextBox[];
 }
 
+// Selection state for multi-object selection
+export interface SelectionState {
+  elementIds: Set<number>;
+  textBoxIds: Set<string>;
+}
+
+// Clipboard data for copy/paste
+export interface ClipboardData {
+  elements: GraphElement[];
+  textBoxes: TextBox[];
+  timestamp: number;
+}
+
 // Default labels
 export const DEFAULT_LABELS: GraphLabels = {
   axisLabels: {
@@ -148,6 +165,8 @@ export interface EasyGraphsExport {
     strokeColor: string;
     strokeWidth: number;
     drawMode: DrawMode;
+    lineStyle: 'solid' | 'dashed' | 'dotted';
+    opacity: number;
   };
 }
 
@@ -158,6 +177,8 @@ export interface GraphCanvasProps {
   showAxisUnits?: boolean;
   strokeColor: string;
   strokeWidth: number;
+  lineStyle: 'solid' | 'dashed' | 'dotted';
+  opacity: number;
   drawMode: DrawMode;
   scale: { x: number; y: number };
   onCoordinateClick?: (point: Point) => void;
@@ -170,15 +191,17 @@ export interface GraphCanvasProps {
 export interface GraphCanvasHandle {
   addLineByCoordinates: (start: Point, end: Point) => void;
   addFillArea: (elementId: number, fillAbove: boolean, color: string, fillToAxis?: boolean) => void;
-  addFunction: (formula: string, xMin: number, xMax: number, color: string, lineWidth: number) => void;
+  addFunction: (formula: string, xMin: number, xMax: number, color: string, lineWidth: number, lineStyle?: 'solid' | 'dashed' | 'dotted', opacity?: number) => void;
   clearCanvas: () => void;
   undo: () => void;
   redo: () => void;
   getElements: () => GraphElement[];
   exportToPNG: () => void;
+  exportToJPEG: (quality?: number) => void;
+  exportToPDF: (pageSize?: string, orientation?: 'portrait' | 'landscape') => void;
   getSelectedElement: () => GraphElement | null;
   getSelectedElementId: () => number | null;
-  updateSelectedElement: (color: string, lineWidth: number, addToHistory?: boolean, previousState?: GraphElement) => void;
+  updateSelectedElement: (color: string, lineWidth: number, addToHistory?: boolean, previousState?: GraphElement, lineStyle?: 'solid' | 'dashed' | 'dotted', opacity?: number) => void;
   addModifyAction: (elementId: number, previousState: GraphElement) => void;
   getExportData: () => GraphExportData;
   importData: (data: GraphExportData) => void;
@@ -188,6 +211,10 @@ export interface GraphCanvasHandle {
   addTextBox: (textBox: TextBox) => void;
   deleteTextBox: (id: string) => void;
   selectTextBox: (id: string) => void;
+  copySelection: () => void;
+  pasteSelection: () => void;
+  deleteSelection: () => void;
+  getSelection: () => SelectionState;
 }
 
 const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function GraphCanvasComponent(props, ref) {
@@ -198,6 +225,8 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     showAxisUnits = true,
     strokeColor,
     strokeWidth,
+    lineStyle,
+    opacity,
     drawMode,
     scale,
     onCoordinateClick,
@@ -218,9 +247,22 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
   const [draggingControl, setDraggingControl] = useState(false);
 
   // Selection and editing state
-  const [selectedElementId, setSelectedElementId] = useState<number | null>(null);
+  const [selection, setSelection] = useState<SelectionState>({
+    elementIds: new Set(),
+    textBoxIds: new Set()
+  });
   const [draggingPointIndex, setDraggingPointIndex] = useState<number | null>(null);
   const [draggingControlPointFlag, setDraggingControlPointFlag] = useState(false);
+  const [draggingEntireElement, setDraggingEntireElement] = useState(false);
+  const [elementDragStart, setElementDragStart] = useState<Point | null>(null);
+  const selectedElementsOriginalStatesRef = useRef<Map<number, GraphElement> | null>(null);
+
+  // Selection box for multi-select
+  const [selectionBox, setSelectionBox] = useState<{start: Point, end: Point} | null>(null);
+  const [isDrawingSelectionBox, setIsDrawingSelectionBox] = useState(false);
+
+  // Clipboard for copy/paste
+  const [clipboard, setClipboard] = useState<ClipboardData | null>(null);
 
   // Pan offset for mouse-centered zooming (in pixels)
   const [panOffset, setPanOffset] = useState<Point>({ x: 0, y: 0 });
@@ -235,7 +277,6 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
 
   // Label state
   const [labels, setLabels] = useState<GraphLabels>(DEFAULT_LABELS);
-  const [selectedTextBoxId, setSelectedTextBoxId] = useState<string | null>(null);
   const [draggingTextBox, setDraggingTextBox] = useState<string | null>(null);
   const [resizingTextBox, setResizingTextBox] = useState<{
     id: string;
@@ -282,6 +323,140 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       y: centerY - graphY * scale.y
     };
   }, [scale, panOffset, getTitleOffset]);
+
+  // Helper function to check if an element is within selection box
+  const isElementInSelectionBox = useCallback((element: GraphElement, box: {start: Point, end: Point}): boolean => {
+    const minX = Math.min(box.start.x, box.end.x);
+    const maxX = Math.max(box.start.x, box.end.x);
+    const minY = Math.min(box.start.y, box.end.y);
+    const maxY = Math.max(box.start.y, box.end.y);
+
+    // Helper to check if a point is in the box
+    const isPointInBox = (canvasX: number, canvasY: number): boolean => {
+      return canvasX >= minX && canvasX <= maxX && canvasY >= minY && canvasY <= maxY;
+    };
+
+    // Helper to check if a line segment intersects with the selection box
+    const lineIntersectsBox = (x1: number, y1: number, x2: number, y2: number): boolean => {
+      // If either endpoint is in the box, the line intersects
+      if (isPointInBox(x1, y1) || isPointInBox(x2, y2)) return true;
+
+      // Check if line crosses any of the 4 box edges
+      const boxEdges = [
+        { x1: minX, y1: minY, x2: maxX, y2: minY }, // top
+        { x1: maxX, y1: minY, x2: maxX, y2: maxY }, // right
+        { x1: maxX, y1: maxY, x2: minX, y2: maxY }, // bottom
+        { x1: minX, y1: maxY, x2: minX, y2: minY }  // left
+      ];
+
+      for (const edge of boxEdges) {
+        if (lineSegmentsIntersect(x1, y1, x2, y2, edge.x1, edge.y1, edge.x2, edge.y2)) {
+          return true;
+        }
+      }
+
+      return false;
+    };
+
+    // Helper to check if two line segments intersect
+    const lineSegmentsIntersect = (x1: number, y1: number, x2: number, y2: number,
+                                    x3: number, y3: number, x4: number, y4: number): boolean => {
+      const denom = (y4 - y3) * (x2 - x1) - (x4 - x3) * (y2 - y1);
+      if (denom === 0) return false; // parallel
+
+      const ua = ((x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3)) / denom;
+      const ub = ((x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3)) / denom;
+
+      return ua >= 0 && ua <= 1 && ub >= 0 && ub <= 1;
+    };
+
+    // For lines and bezier curves, check if the line segments intersect with the box
+    if (element.type === 'line' && element.points.length === 2) {
+      const p1 = graphToCanvas(element.points[0].x, element.points[0].y);
+      const p2 = graphToCanvas(element.points[1].x, element.points[1].y);
+      return lineIntersectsBox(p1.x, p1.y, p2.x, p2.y);
+    }
+
+    // For freehand, check if any segment intersects
+    if (element.type === 'freehand') {
+      for (let i = 0; i < element.points.length - 1; i++) {
+        const p1 = graphToCanvas(element.points[i].x, element.points[i].y);
+        const p2 = graphToCanvas(element.points[i + 1].x, element.points[i + 1].y);
+        if (lineIntersectsBox(p1.x, p1.y, p2.x, p2.y)) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    // For bezier curves, check control points and sample points along the curve
+    if (element.type === 'bezier' && element.points.length === 2 && element.controlPoint) {
+      const p1 = graphToCanvas(element.points[0].x, element.points[0].y);
+      const p2 = graphToCanvas(element.points[1].x, element.points[1].y);
+      const cp = graphToCanvas(element.controlPoint.x, element.controlPoint.y);
+
+      // Check control points
+      if (isPointInBox(p1.x, p1.y) || isPointInBox(p2.x, p2.y) || isPointInBox(cp.x, cp.y)) {
+        return true;
+      }
+
+      // Sample points along the bezier curve
+      for (let t = 0; t <= 1; t += 0.1) {
+        const x = (1 - t) * (1 - t) * p1.x + 2 * (1 - t) * t * cp.x + t * t * p2.x;
+        const y = (1 - t) * (1 - t) * p1.y + 2 * (1 - t) * t * cp.y + t * t * p2.y;
+        if (isPointInBox(x, y)) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    // For point elements or functions, check if any point is within the box
+    return element.points.some(point => {
+      const canvasPoint = graphToCanvas(point.x, point.y);
+      return isPointInBox(canvasPoint.x, canvasPoint.y);
+    });
+  }, [graphToCanvas]);
+
+  // Helper function to check if a textbox is within selection box
+  const isTextBoxInSelectionBox = useCallback((textBox: TextBox, box: {start: Point, end: Point}): boolean => {
+    const minX = Math.min(box.start.x, box.end.x);
+    const maxX = Math.max(box.start.x, box.end.x);
+    const minY = Math.min(box.start.y, box.end.y);
+    const maxY = Math.max(box.start.y, box.end.y);
+
+    let x = textBox.x;
+    let y = textBox.y;
+    if (textBox.coordinateSystem === 'graph') {
+      const canvasPoint = graphToCanvas(textBox.x, textBox.y);
+      x = canvasPoint.x;
+      y = canvasPoint.y;
+    }
+
+    // Check if textbox intersects with selection box
+    return !(x + textBox.width < minX || x > maxX ||
+             y + textBox.height < minY || y > maxY);
+  }, [graphToCanvas]);
+
+  // Find all objects within selection box
+  const findObjectsInBox = useCallback((box: {start: Point, end: Point}): SelectionState => {
+    const elementIds = new Set<number>();
+    const textBoxIds = new Set<string>();
+
+    elements.forEach((element, index) => {
+      if (isElementInSelectionBox(element, box)) {
+        elementIds.add(index);
+      }
+    });
+
+    labels.textBoxes.forEach(textBox => {
+      if (isTextBoxInSelectionBox(textBox, box)) {
+        textBoxIds.add(textBox.id);
+      }
+    });
+
+    return { elementIds, textBoxIds };
+  }, [elements, labels.textBoxes, isElementInSelectionBox, isTextBoxInSelectionBox]);
 
   // Draw grid
   const drawGrid = useCallback((ctx: CanvasRenderingContext2D) => {
@@ -523,7 +698,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       }
 
       // Selection highlight if selected
-      if (selectedTextBoxId === textBox.id) {
+      if (selection.textBoxIds.has(textBox.id)) {
         ctx.fillStyle = 'rgba(230, 126, 34, 0.2)';
         ctx.fillRect(x - 4, y - 4, textBox.width + 8, textBox.height + 8);
         ctx.strokeStyle = '#E67E22';
@@ -553,8 +728,8 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
         ctx.fillText(line, x + textBox.padding, y + textBox.padding + i * lineHeight);
       });
 
-      // Resize handles if selected
-      if (selectedTextBoxId === textBox.id) {
+      // Resize handles if selected (only show for single selection)
+      if (selection.textBoxIds.has(textBox.id) && selection.textBoxIds.size === 1 && selection.elementIds.size === 0) {
         const handleSize = 8;
         ctx.fillStyle = '#E67E22';
         ctx.strokeStyle = '#FFFFFF';
@@ -575,7 +750,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
         });
       }
     });
-  }, [labels, elements, graphToCanvas, selectedTextBoxId, wrapText, getTitleOffset, panOffset, selectedElementLabelIndex]);
+  }, [labels, elements, graphToCanvas, selection, wrapText, getTitleOffset, panOffset, selectedElementLabelIndex]);
 
   // Helper function to check if a point is inside a text box
   const isPointInTextBox = useCallback((canvasX: number, canvasY: number, textBox: TextBox): boolean => {
@@ -676,6 +851,30 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     return null;
   }, [labels.elementLabels, isPointInElementLabel]);
 
+  // Helper function to apply line style and opacity
+  const applyLineStyle = useCallback((
+    ctx: CanvasRenderingContext2D,
+    style: 'solid' | 'dashed' | 'dotted' = 'solid',
+    elementOpacity: number = 1
+  ) => {
+    // Apply opacity
+    ctx.globalAlpha = elementOpacity;
+
+    // Apply line dash pattern
+    switch (style) {
+      case 'dashed':
+        ctx.setLineDash([10, 5]);  // 10px dash, 5px gap
+        break;
+      case 'dotted':
+        ctx.setLineDash([2, 3]);   // 2px dot, 3px gap
+        break;
+      case 'solid':
+      default:
+        ctx.setLineDash([]);
+        break;
+    }
+  }, []);
+
   // Draw a line element
   const drawLine = useCallback((ctx: CanvasRenderingContext2D, element: GraphElement) => {
     if (element.points.length < 2) return;
@@ -685,6 +884,9 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
+    // Apply line style and opacity
+    applyLineStyle(ctx, element.lineStyle, element.opacity);
+
     const start = graphToCanvas(element.points[0].x, element.points[0].y);
     const end = graphToCanvas(element.points[1].x, element.points[1].y);
 
@@ -692,7 +894,11 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     ctx.moveTo(start.x, start.y);
     ctx.lineTo(end.x, end.y);
     ctx.stroke();
-  }, [graphToCanvas]);
+
+    // Reset to defaults
+    ctx.globalAlpha = 1;
+    ctx.setLineDash([]);
+  }, [graphToCanvas, applyLineStyle]);
 
   // Draw a bezier curve element
   const drawBezier = useCallback((ctx: CanvasRenderingContext2D, element: GraphElement) => {
@@ -703,6 +909,9 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
+    // Apply line style and opacity
+    applyLineStyle(ctx, element.lineStyle, element.opacity);
+
     const start = graphToCanvas(element.points[0].x, element.points[0].y);
     const end = graphToCanvas(element.points[1].x, element.points[1].y);
     const control = graphToCanvas(element.controlPoint.x, element.controlPoint.y);
@@ -711,7 +920,11 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     ctx.moveTo(start.x, start.y);
     ctx.quadraticCurveTo(control.x, control.y, end.x, end.y);
     ctx.stroke();
-  }, [graphToCanvas]);
+
+    // Reset to defaults
+    ctx.globalAlpha = 1;
+    ctx.setLineDash([]);
+  }, [graphToCanvas, applyLineStyle]);
 
   // Draw a point element
   const drawPoint = useCallback((ctx: CanvasRenderingContext2D, element: GraphElement) => {
@@ -721,6 +934,9 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     const canvasPoint = graphToCanvas(point.x, point.y);
     const pointSize = element.pointSize || element.lineWidth * 2;
 
+    // Apply opacity to point
+    ctx.globalAlpha = element.opacity ?? 1;
+
     // Draw the point
     ctx.fillStyle = element.color;
     ctx.beginPath();
@@ -729,6 +945,8 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
 
     // Draw projection lines to axes if enabled
     if (element.showProjection) {
+      // Apply slightly more transparency to projections
+      ctx.globalAlpha = (element.opacity ?? 1) * 0.8;
       ctx.strokeStyle = element.color;
       ctx.lineWidth = 1;
       ctx.setLineDash([5, 5]); // Dashed lines
@@ -766,6 +984,9 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       // Reset line dash
       ctx.setLineDash([]);
     }
+
+    // Reset opacity
+    ctx.globalAlpha = 1;
   }, [graphToCanvas]);
 
   // Simplify points using Ramer-Douglas-Peucker algorithm
@@ -823,6 +1044,9 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
+    // Apply line style and opacity
+    applyLineStyle(ctx, element.lineStyle, element.opacity);
+
     // Simplify points to reduce noise
     const simplified = simplifyPoints(element.points, 0.05);
     const canvasPoints = simplified.map(p => graphToCanvas(p.x, p.y));
@@ -835,6 +1059,9 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
         ctx.lineTo(canvasPoints[1].x, canvasPoints[1].y);
       }
       ctx.stroke();
+      // Reset to defaults
+      ctx.globalAlpha = 1;
+      ctx.setLineDash([]);
       return;
     }
 
@@ -864,7 +1091,11 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     }
 
     ctx.stroke();
-  }, [graphToCanvas, simplifyPoints]);
+
+    // Reset to defaults
+    ctx.globalAlpha = 1;
+    ctx.setLineDash([]);
+  }, [graphToCanvas, simplifyPoints, applyLineStyle]);
 
   // Draw a function curve
   const drawFunction = useCallback((ctx: CanvasRenderingContext2D, element: GraphElement) => {
@@ -874,6 +1105,9 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     ctx.lineWidth = element.lineWidth;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
+
+    // Apply line style and opacity
+    applyLineStyle(ctx, element.lineStyle, element.opacity);
 
     const canvasPoints = element.points.map(p => graphToCanvas(p.x, p.y));
 
@@ -895,7 +1129,11 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     }
 
     ctx.stroke();
-  }, [graphToCanvas]);
+
+    // Reset to defaults
+    ctx.globalAlpha = 1;
+    ctx.setLineDash([]);
+  }, [graphToCanvas, applyLineStyle]);
 
   // Fill area above or below a curve
   const fillAreaForElement = useCallback((ctx: CanvasRenderingContext2D, elementId: number, fillAbove: boolean, color: string, fillToAxis: boolean = false) => {
@@ -912,7 +1150,9 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     ctx.save();
 
     ctx.fillStyle = color;
-    ctx.globalAlpha = 0.3;
+    // Multiply fill opacity (0.3) with element opacity
+    const elementOpacity = element.opacity ?? 1;
+    ctx.globalAlpha = 0.3 * elementOpacity;
 
     // If filling to axis, clip to only the relevant half
     if (fillToAxis) {
@@ -1148,101 +1388,162 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     // Render all labels
     renderLabels(ctx);
 
-    // Draw selection highlights
-    if (selectedElementId !== null && selectedElementId < elements.length) {
-      const selectedElement = elements[selectedElementId];
+    // Draw selection highlights for all selected elements
+    selection.elementIds.forEach(selectedElementId => {
+      if (selectedElementId < elements.length) {
+        const selectedElement = elements[selectedElementId];
 
-      // Draw control points for selected element
-      if (selectedElement.type === 'line') {
-        // Draw start and end points
-        selectedElement.points.forEach((point, idx) => {
-          const canvasPoint = graphToCanvas(point.x, point.y);
-          ctx.fillStyle = '#E67E22';
-          ctx.strokeStyle = '#FFFFFF';
-          ctx.lineWidth = 2;
-          ctx.beginPath();
-          ctx.arc(canvasPoint.x, canvasPoint.y, 8, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.stroke();
-        });
-      } else if (selectedElement.type === 'bezier') {
-        // Draw start and end points
-        selectedElement.points.forEach((point, idx) => {
-          const canvasPoint = graphToCanvas(point.x, point.y);
-          ctx.fillStyle = '#E67E22';
-          ctx.strokeStyle = '#FFFFFF';
-          ctx.lineWidth = 2;
-          ctx.beginPath();
-          ctx.arc(canvasPoint.x, canvasPoint.y, 8, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.stroke();
-        });
-
-        // Draw control point
-        if (selectedElement.controlPoint) {
-          const controlCanvas = graphToCanvas(selectedElement.controlPoint.x, selectedElement.controlPoint.y);
-          ctx.fillStyle = '#9B59B6';
-          ctx.strokeStyle = '#FFFFFF';
-          ctx.lineWidth = 2;
-          ctx.beginPath();
-          ctx.arc(controlCanvas.x, controlCanvas.y, 8, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.stroke();
-
-          // Draw dashed lines from control point to endpoints
-          ctx.setLineDash([5, 5]);
-          ctx.strokeStyle = '#9B59B6';
-          ctx.lineWidth = 1;
-
-          const start = graphToCanvas(selectedElement.points[0].x, selectedElement.points[0].y);
-          const end = graphToCanvas(selectedElement.points[1].x, selectedElement.points[1].y);
-
-          ctx.beginPath();
-          ctx.moveTo(start.x, start.y);
-          ctx.lineTo(controlCanvas.x, controlCanvas.y);
-          ctx.lineTo(end.x, end.y);
-          ctx.stroke();
-          ctx.setLineDash([]);
-        }
-      } else if (selectedElement.type === 'freehand') {
-        // Draw all points
-        selectedElement.points.forEach((point, idx) => {
-          const canvasPoint = graphToCanvas(point.x, point.y);
-          ctx.fillStyle = '#E67E22';
-          ctx.strokeStyle = '#FFFFFF';
-          ctx.lineWidth = 2;
-          ctx.beginPath();
-          ctx.arc(canvasPoint.x, canvasPoint.y, 6, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.stroke();
-        });
-      } else if (selectedElement.type === 'point') {
-        // Draw selection ring around point
-        const point = selectedElement.points[0];
-        const canvasPoint = graphToCanvas(point.x, point.y);
-        const pointSize = selectedElement.pointSize || selectedElement.lineWidth * 2;
-
-        // Draw outer selection ring
+        // First, draw a highlighted stroke around the entire element
+        ctx.globalAlpha = 1;
         ctx.strokeStyle = '#E67E22';
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.arc(canvasPoint.x, canvasPoint.y, pointSize + 5, 0, Math.PI * 2);
-        ctx.stroke();
+        ctx.lineWidth = Math.max(selectedElement.lineWidth || 2, 2) + 4;
+        ctx.setLineDash([]);
 
-        // Draw inner white ring
-        ctx.strokeStyle = '#FFFFFF';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.arc(canvasPoint.x, canvasPoint.y, pointSize + 3, 0, Math.PI * 2);
-        ctx.stroke();
+        if (selectedElement.type === 'line' && selectedElement.points.length === 2) {
+          const p1 = graphToCanvas(selectedElement.points[0].x, selectedElement.points[0].y);
+          const p2 = graphToCanvas(selectedElement.points[1].x, selectedElement.points[1].y);
+          ctx.beginPath();
+          ctx.moveTo(p1.x, p1.y);
+          ctx.lineTo(p2.x, p2.y);
+          ctx.stroke();
+        } else if (selectedElement.type === 'bezier' && selectedElement.points.length === 2 && selectedElement.controlPoint) {
+          const p1 = graphToCanvas(selectedElement.points[0].x, selectedElement.points[0].y);
+          const p2 = graphToCanvas(selectedElement.points[1].x, selectedElement.points[1].y);
+          const cp = graphToCanvas(selectedElement.controlPoint.x, selectedElement.controlPoint.y);
+          ctx.beginPath();
+          ctx.moveTo(p1.x, p1.y);
+          ctx.quadraticCurveTo(cp.x, cp.y, p2.x, p2.y);
+          ctx.stroke();
+        } else if (selectedElement.type === 'freehand' && selectedElement.points.length > 0) {
+          const firstPoint = graphToCanvas(selectedElement.points[0].x, selectedElement.points[0].y);
+          ctx.beginPath();
+          ctx.moveTo(firstPoint.x, firstPoint.y);
+          for (let i = 1; i < selectedElement.points.length; i++) {
+            const point = graphToCanvas(selectedElement.points[i].x, selectedElement.points[i].y);
+            ctx.lineTo(point.x, point.y);
+          }
+          ctx.stroke();
+        }
+
+        // Draw control points for selected element
+        if (selectedElement.type === 'line') {
+          // Draw start and end points
+          selectedElement.points.forEach((point, idx) => {
+            const canvasPoint = graphToCanvas(point.x, point.y);
+            ctx.fillStyle = '#E67E22';
+            ctx.strokeStyle = '#FFFFFF';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(canvasPoint.x, canvasPoint.y, 8, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+          });
+        } else if (selectedElement.type === 'bezier') {
+          // Draw start and end points
+          selectedElement.points.forEach((point, idx) => {
+            const canvasPoint = graphToCanvas(point.x, point.y);
+            ctx.fillStyle = '#E67E22';
+            ctx.strokeStyle = '#FFFFFF';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(canvasPoint.x, canvasPoint.y, 8, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+          });
+
+          // Draw control point
+          if (selectedElement.controlPoint) {
+            const controlCanvas = graphToCanvas(selectedElement.controlPoint.x, selectedElement.controlPoint.y);
+            ctx.globalAlpha = 1; // Don't apply element opacity to helper lines
+            ctx.fillStyle = '#9B59B6';
+            ctx.strokeStyle = '#FFFFFF';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(controlCanvas.x, controlCanvas.y, 8, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+
+            // Draw dashed lines from control point to endpoints
+            ctx.setLineDash([5, 5]);
+            ctx.strokeStyle = '#9B59B6';
+            ctx.lineWidth = 1;
+
+            const start = graphToCanvas(selectedElement.points[0].x, selectedElement.points[0].y);
+            const end = graphToCanvas(selectedElement.points[1].x, selectedElement.points[1].y);
+
+            ctx.beginPath();
+            ctx.moveTo(start.x, start.y);
+            ctx.lineTo(controlCanvas.x, controlCanvas.y);
+            ctx.lineTo(end.x, end.y);
+            ctx.stroke();
+            ctx.setLineDash([]);
+          }
+        } else if (selectedElement.type === 'freehand') {
+          // Draw all points
+          selectedElement.points.forEach((point, idx) => {
+            const canvasPoint = graphToCanvas(point.x, point.y);
+            ctx.fillStyle = '#E67E22';
+            ctx.strokeStyle = '#FFFFFF';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(canvasPoint.x, canvasPoint.y, 6, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+          });
+        } else if (selectedElement.type === 'point') {
+          // Draw selection ring around point
+          const point = selectedElement.points[0];
+          const canvasPoint = graphToCanvas(point.x, point.y);
+          const pointSize = selectedElement.pointSize || selectedElement.lineWidth * 2;
+
+          // Draw outer selection ring
+          ctx.strokeStyle = '#E67E22';
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.arc(canvasPoint.x, canvasPoint.y, pointSize + 5, 0, Math.PI * 2);
+          ctx.stroke();
+
+          // Draw inner white ring
+          ctx.strokeStyle = '#FFFFFF';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(canvasPoint.x, canvasPoint.y, pointSize + 3, 0, Math.PI * 2);
+          ctx.stroke();
+        }
       }
+    });
+
+    // Draw selection box if active
+    if (isDrawingSelectionBox && selectionBox) {
+      const minX = Math.min(selectionBox.start.x, selectionBox.end.x);
+      const maxX = Math.max(selectionBox.start.x, selectionBox.end.x);
+      const minY = Math.min(selectionBox.start.y, selectionBox.end.y);
+      const maxY = Math.max(selectionBox.start.y, selectionBox.end.y);
+
+      // Draw dashed border
+      ctx.strokeStyle = '#2B5F82';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([5, 5]);
+      ctx.strokeRect(minX, minY, maxX - minX, maxY - minY);
+      ctx.setLineDash([]);
+
+      // Draw semi-transparent fill
+      ctx.fillStyle = 'rgba(43, 95, 130, 0.1)';
+      ctx.fillRect(minX, minY, maxX - minX, maxY - minY);
     }
-  }, [drawGrid, elements, fillAreas, currentPoints, tempControlPoint, isDrawing, drawMode, strokeColor, strokeWidth, graphToCanvas, drawLine, drawBezier, drawFreehand, drawPoint, drawFunction, fillAreaForElement, selectedElementId, simplifyPoints, renderLabels]);
+  }, [drawGrid, elements, fillAreas, currentPoints, tempControlPoint, isDrawing, drawMode, strokeColor, strokeWidth, graphToCanvas, drawLine, drawBezier, drawFreehand, drawPoint, drawFunction, fillAreaForElement, selection, selectionBox, isDrawingSelectionBox, simplifyPoints, renderLabels]);
 
   // Re-render when dependencies change
   useEffect(() => {
     render();
   }, [render]);
+
+  // Clear selection when switching away from select/textbox modes
+  useEffect(() => {
+    if (drawMode !== 'select' && drawMode !== 'textbox') {
+      setSelection({ elementIds: new Set(), textBoxIds: new Set() });
+    }
+  }, [drawMode]);
 
   // Add wheel event listener with passive: false to allow preventDefault
   useEffect(() => {
@@ -1298,9 +1599,11 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
   // Notify parent when selection changes or when selected element's data changes
   useEffect(() => {
     if (onSelectionChange) {
-      onSelectionChange(selectedElementId);
+      // Emit first selected element ID for backward compatibility
+      const firstElementId = Array.from(selection.elementIds)[0];
+      onSelectionChange(firstElementId !== undefined ? firstElementId : null);
     }
-  }, [selectedElementId, elements, onSelectionChange]);
+  }, [selection, elements, onSelectionChange]);
 
   // Notify parent when elements array changes
   useEffect(() => {
@@ -1309,14 +1612,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     }
   }, [elements, onElementsChange]);
 
-  // Clear selection when switching away from select mode
-  useEffect(() => {
-    if (drawMode !== 'select') {
-      setSelectedElementId(null);
-      setDraggingPointIndex(null);
-      setDraggingControlPointFlag(false);
-    }
-  }, [drawMode]);
+  // Note: Selection clearing when switching modes is handled by the useEffect at line ~1431
 
   // Handle mouse/touch events
   const getEventPoint = (e: React.MouseEvent | React.TouchEvent): Point => {
@@ -1517,9 +1813,51 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     if (drawMode === 'select') {
       // Selection mode: find and select element
       const { x: canvasX, y: canvasY } = getCanvasCoordinates(e);
+      const isCtrlPressed = ('ctrlKey' in e && e.ctrlKey) || ('metaKey' in e && e.metaKey);
 
-      const clickedElement = findClickedElement(canvasX, canvasY);
-      setSelectedElementId(clickedElement);
+      const clickedElementId = findClickedElement(canvasX, canvasY);
+      const clickedTextBoxId = findClickedTextBox(canvasX, canvasY);
+
+      if (isCtrlPressed) {
+        // Toggle mode - add/remove from selection
+        if (clickedElementId !== null) {
+          setSelection(prev => {
+            const newElementIds = new Set(prev.elementIds);
+            if (newElementIds.has(clickedElementId)) {
+              newElementIds.delete(clickedElementId);
+            } else {
+              newElementIds.add(clickedElementId);
+            }
+            return { ...prev, elementIds: newElementIds };
+          });
+        } else if (clickedTextBoxId !== null) {
+          setSelection(prev => {
+            const newTextBoxIds = new Set(prev.textBoxIds);
+            if (newTextBoxIds.has(clickedTextBoxId)) {
+              newTextBoxIds.delete(clickedTextBoxId);
+            } else {
+              newTextBoxIds.add(clickedTextBoxId);
+            }
+            return { ...prev, textBoxIds: newTextBoxIds };
+          });
+        }
+      } else {
+        // Replace selection
+        if (clickedElementId !== null) {
+          setSelection({
+            elementIds: new Set([clickedElementId]),
+            textBoxIds: new Set()
+          });
+        } else if (clickedTextBoxId !== null) {
+          setSelection({
+            elementIds: new Set(),
+            textBoxIds: new Set([clickedTextBoxId])
+          });
+        } else {
+          // Clear selection on empty area click
+          setSelection({ elementIds: new Set(), textBoxIds: new Set() });
+        }
+      }
       return;
     }
 
@@ -1531,7 +1869,9 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
           type: 'line',
           points: [currentPoints[0], point],
           color: strokeColor,
-          lineWidth: strokeWidth
+          lineWidth: strokeWidth,
+          lineStyle: lineStyle,
+          opacity: opacity
         };
         setElements(prev => [...prev, newElement]);
         setActionHistory(prev => [...prev, { type: 'element' }]);
@@ -1557,14 +1897,19 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
         color: strokeColor,
         lineWidth: strokeWidth,
         pointSize: strokeWidth * 2,
-        showProjection: false
+        showProjection: false,
+        lineStyle: lineStyle,
+        opacity: opacity
       };
       const newElementId = elements.length;
       setElements(prev => [...prev, newElement]);
       setActionHistory(prev => [...prev, { type: 'element' }]);
       setRedoHistory([]);
       // Auto-select the newly created point
-      setSelectedElementId(newElementId);
+      setSelection({
+        elementIds: new Set([newElementId]),
+        textBoxIds: new Set()
+      });
     }
 
     onCoordinateClick?.(point);
@@ -1573,11 +1918,33 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
     const { x: canvasX, y: canvasY } = getCanvasCoordinates(e);
 
-    // Check if CTRL key is pressed (for panning)
+    // Check if CTRL key is pressed
     const isCtrlPressed = 'ctrlKey' in e && e.ctrlKey;
 
     if (isCtrlPressed) {
-      // Start panning
+      // If elements are selected, start multi-element translation instead of panning
+      if (selection.elementIds.size > 0) {
+        // Store original states for all selected elements for undo
+        const originalStates = new Map<number, GraphElement>();
+        selection.elementIds.forEach(elementId => {
+          if (elementId < elements.length) {
+            // Deep copy the element including all points and control point
+            const element = elements[elementId];
+            originalStates.set(elementId, {
+              ...element,
+              points: element.points.map(p => ({ ...p })),
+              controlPoint: element.controlPoint ? { ...element.controlPoint } : undefined
+            });
+          }
+        });
+
+        selectedElementsOriginalStatesRef.current = originalStates;
+        setDraggingEntireElement(true);
+        setElementDragStart({ x: canvasX, y: canvasY });
+        return;
+      }
+
+      // Otherwise, start panning
       setIsPanning(true);
       setPanStart({ x: canvasX, y: canvasY });
       return;
@@ -1596,7 +1963,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
             return;
           }
 
-          setSelectedTextBoxId(clickedTextBoxId);
+          setSelection({ elementIds: new Set(), textBoxIds: new Set([clickedTextBoxId]) });
           setDraggingTextBox(clickedTextBoxId);
           let x = textBox.x;
           let y = textBox.y;
@@ -1610,9 +1977,9 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
         }
       } else {
         // Click on empty area
-        if (selectedTextBoxId !== null) {
+        if (selection.textBoxIds.size > 0) {
           // If a text box is already selected, deselect it
-          setSelectedTextBoxId(null);
+          setSelection({ elementIds: new Set(), textBoxIds: new Set() });
         } else {
           // If no text box is selected, create a new one
           const newTextBox: TextBox = {
@@ -1643,7 +2010,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
             previousState: previousLabels
           }]);
           setRedoHistory([]);
-          setSelectedTextBoxId(newTextBox.id);
+          setSelection({ elementIds: new Set(), textBoxIds: new Set([newTextBox.id]) });
 
           // Notify parent component
           if (onLabelsChange) {
@@ -1663,11 +2030,11 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
           const handle = getResizeHandle(canvasX, canvasY, textBox);
           if (handle) {
             setResizingTextBox({ id: clickedTextBoxId, corner: handle });
-            setSelectedTextBoxId(clickedTextBoxId);
+            setSelection({ elementIds: new Set(), textBoxIds: new Set([clickedTextBoxId]) });
             return;
           }
 
-          setSelectedTextBoxId(clickedTextBoxId);
+          setSelection({ elementIds: new Set(), textBoxIds: new Set([clickedTextBoxId]) });
           setDraggingTextBox(clickedTextBoxId);
           let x = textBox.x;
           let y = textBox.y;
@@ -1695,9 +2062,10 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       setSelectedElementLabelIndex(null);
     }
 
-    if (drawMode === 'select' && selectedElementId !== null) {
+    const firstElementId = Array.from(selection.elementIds)[0];
+    if (drawMode === 'select' && firstElementId !== undefined) {
       // Check if clicking on a control point of selected element
-      const clickedPoint = findClickedPoint(canvasX, canvasY, selectedElementId);
+      const clickedPoint = findClickedPoint(canvasX, canvasY, firstElementId);
       if (clickedPoint) {
         if (clickedPoint.type === 'point') {
           setDraggingPointIndex(clickedPoint.index);
@@ -1719,10 +2087,26 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
         setDraggingControl(true);
       }
     }
+
+    // Start selection box in select mode if clicking on empty area (without Ctrl)
+    if (drawMode === 'select' && !isCtrlPressed) {
+      const clickedElementId = findClickedElement(canvasX, canvasY);
+      const clickedTextBoxId = findClickedTextBox(canvasX, canvasY);
+
+      if (clickedElementId === null && clickedTextBoxId === null) {
+        // No object clicked, start selection box
+        setIsDrawingSelectionBox(true);
+        setSelectionBox({
+          start: { x: canvasX, y: canvasY },
+          end: { x: canvasX, y: canvasY }
+        });
+      }
+    }
   };
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
     const { x: canvasX, y: canvasY } = getCanvasCoordinates(e);
+    const firstElementId = Array.from(selection.elementIds)[0];
 
     // Handle panning
     if (isPanning && panStart) {
@@ -1735,6 +2119,62 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       }));
 
       setPanStart({ x: canvasX, y: canvasY });
+      return;
+    }
+
+    // Handle selection box dragging
+    if (isDrawingSelectionBox && selectionBox) {
+      setSelectionBox({
+        ...selectionBox,
+        end: { x: canvasX, y: canvasY }
+      });
+      return;
+    }
+
+    // Handle entire element translation (translate all selected elements)
+    if (draggingEntireElement && elementDragStart) {
+      // Defensive null check for the ref
+      if (!selectedElementsOriginalStatesRef.current) {
+        return;
+      }
+
+      // Calculate total delta from initial drag start position
+      const deltaX = canvasX - elementDragStart.x;
+      const deltaY = canvasY - elementDragStart.y;
+
+      // Convert canvas delta to graph delta
+      const deltaGraphX = deltaX / scale.x;
+      const deltaGraphY = -deltaY / scale.y; // Negative because canvas Y is inverted
+
+      setElements(prev => {
+        const newElements = [...prev];
+
+        // Translate all selected elements
+        selectedElementsOriginalStatesRef.current!.forEach((originalElement, elementId) => {
+          const element = { ...newElements[elementId] };
+
+          // Translate all points based on original positions + total delta
+          element.points = originalElement.points.map(p => ({
+            x: p.x + deltaGraphX,
+            y: p.y + deltaGraphY
+          }));
+
+          // Translate control point if it's a bezier
+          if (element.type === 'bezier' && originalElement.controlPoint) {
+            element.controlPoint = {
+              x: originalElement.controlPoint.x + deltaGraphX,
+              y: originalElement.controlPoint.y + deltaGraphY
+            };
+          }
+
+          newElements[elementId] = element;
+        });
+
+        return newElements;
+      });
+
+      // Don't update elementDragStart - keep it at the initial position
+      // This ensures delta is always calculated from the original drag start point
       return;
     }
 
@@ -1846,26 +2286,26 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
 
     const point = getEventPoint(e);
 
-    if (drawMode === 'select' && selectedElementId !== null) {
+    if (drawMode === 'select' && firstElementId !== undefined) {
       // Dragging a control point
       if (draggingPointIndex !== null) {
         setElements(prev => {
           const newElements = [...prev];
-          const element = { ...newElements[selectedElementId] };
+          const element = { ...newElements[firstElementId] };
           element.points = [...element.points];
           element.points[draggingPointIndex] = point;
-          newElements[selectedElementId] = element;
+          newElements[firstElementId] = element;
           return newElements;
         });
       } else if (draggingControlPointFlag) {
         // Dragging bezier control point
         setElements(prev => {
           const newElements = [...prev];
-          const element = { ...newElements[selectedElementId] };
+          const element = { ...newElements[firstElementId] };
           if (element.type === 'bezier') {
             element.controlPoint = point;
           }
-          newElements[selectedElementId] = element;
+          newElements[firstElementId] = element;
           return newElements;
         });
       }
@@ -1877,6 +2317,37 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
   };
 
   const handleMouseUp = () => {
+    // Handle entire element translation completion (for all selected elements)
+    if (draggingEntireElement && selectedElementsOriginalStatesRef.current) {
+      // Create modify actions for all translated elements
+      const modifyActions: Action[] = [];
+      selectedElementsOriginalStatesRef.current.forEach((originalState, elementId) => {
+        modifyActions.push({
+          type: 'modify',
+          elementId: elementId,
+          previousState: originalState
+        });
+      });
+
+      // Add all modify actions to history
+      setActionHistory(prev => [...prev, ...modifyActions]);
+      setRedoHistory([]);
+
+      setDraggingEntireElement(false);
+      setElementDragStart(null);
+      selectedElementsOriginalStatesRef.current = null;
+      return;
+    }
+
+    // Finalize selection box
+    if (isDrawingSelectionBox && selectionBox) {
+      const selectedObjects = findObjectsInBox(selectionBox);
+      setSelection(selectedObjects);
+      setIsDrawingSelectionBox(false);
+      setSelectionBox(null);
+      return;
+    }
+
     // Reset panning state
     if (isPanning) {
       setIsPanning(false);
@@ -1924,7 +2395,9 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
         type: 'freehand',
         points: currentPoints,
         color: strokeColor,
-        lineWidth: strokeWidth
+        lineWidth: strokeWidth,
+        lineStyle: lineStyle,
+        opacity: opacity
       };
       setElements(prev => [...prev, newElement]);
       setActionHistory(prev => [...prev, { type: 'element' }]);
@@ -1938,7 +2411,9 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
           points: currentPoints,
           controlPoint: tempControlPoint,
           color: strokeColor,
-          lineWidth: strokeWidth
+          lineWidth: strokeWidth,
+          lineStyle: lineStyle,
+          opacity: opacity
         };
         setElements(prev => [...prev, newElement]);
         setActionHistory(prev => [...prev, { type: 'element' }]);
@@ -1956,12 +2431,14 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       type: 'line',
       points: [start, end],
       color: strokeColor,
-      lineWidth: strokeWidth
+      lineWidth: strokeWidth,
+      lineStyle: lineStyle,
+      opacity: opacity
     };
     setElements(prev => [...prev, newElement]);
     setActionHistory(prev => [...prev, { type: 'element' }]);
     setRedoHistory([]);
-  }, [strokeColor, strokeWidth]);
+  }, [strokeColor, strokeWidth, lineStyle, opacity]);
 
   const addFillArea = useCallback((elementId: number, fillAbove: boolean, color: string, fillToAxis: boolean = false) => {
     setFillAreas(prev => [...prev, { elementId, fillAbove, color, fillToAxis }]);
@@ -1969,7 +2446,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     setRedoHistory([]);
   }, []);
 
-  const addFunction = useCallback((formula: string, xMin: number, xMax: number, color: string, lineWidth: number) => {
+  const addFunction = useCallback((formula: string, xMin: number, xMax: number, color: string, lineWidth: number, lineStyleParam?: 'solid' | 'dashed' | 'dotted', opacityParam?: number) => {
     try {
       const parser = new Parser();
       const expr = parser.parse(formula);
@@ -1998,7 +2475,9 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
                 lineWidth,
                 formula,
                 xMin,
-                xMax
+                xMax,
+                lineStyle: lineStyleParam ?? 'solid',
+                opacity: opacityParam ?? 1
               };
               setElements(prev => [...prev, newElement]);
               setActionHistory(prev => [...prev, { type: 'element' }]);
@@ -2021,7 +2500,9 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
           lineWidth,
           formula,
           xMin,
-          xMax
+          xMax,
+          lineStyle: lineStyleParam ?? 'solid',
+          opacity: opacityParam ?? 1
         };
         setElements(prev => [...prev, newElement]);
         setActionHistory(prev => [...prev, { type: 'element' }]);
@@ -2040,7 +2521,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     setRedoHistory([]);
     setCurrentPoints([]);
     setTempControlPoint(null);
-    setSelectedElementId(null);
+    setSelection({ elementIds: new Set(), textBoxIds: new Set() });
     setDraggingPointIndex(null);
     setDraggingControlPointFlag(false);
   }, []);
@@ -2072,9 +2553,10 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
         // Update elements
         setElements(newElements);
 
-        // Clear selection if needed
-        if (selectedElementId !== null && selectedElementId >= newElements.length) {
-          setSelectedElementId(null);
+        // Clear selection if any selected element index is invalid
+        const invalidSelection = Array.from(selection.elementIds).some(id => id >= newElements.length);
+        if (invalidSelection) {
+          setSelection({ elementIds: new Set(), textBoxIds: selection.textBoxIds });
         }
 
         // Add to redo history
@@ -2121,12 +2603,50 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
           type: 'label',
           previousState: currentLabels
         }]);
+      } else if (lastAction.type === 'paste') {
+        // Undo paste: restore previous state
+        const currentElements = [...elements];
+        const currentLabels = { ...labels };
+
+        setElements(lastAction.previousElements);
+        setLabels(lastAction.previousLabels);
+
+        // Add to redo history
+        setRedoHistory(prev => [...prev, {
+          type: 'paste',
+          previousElements: currentElements,
+          previousLabels: currentLabels
+        }]);
+      } else if (lastAction.type === 'delete') {
+        // Undo delete: restore deleted objects
+        const newElements = [...elements];
+
+        // Restore elements at their original indices
+        lastAction.deletedElements.forEach(({ id, element }) => {
+          newElements.splice(id, 0, element);
+        });
+
+        const newLabels = {
+          ...labels,
+          textBoxes: [...labels.textBoxes, ...lastAction.deletedTextBoxes]
+        };
+
+        setElements(newElements);
+        setLabels(newLabels);
+
+        // Add to redo history
+        setRedoHistory(prev => [...prev, {
+          type: 'delete',
+          deletedElements: lastAction.deletedElements,
+          deletedTextBoxes: lastAction.deletedTextBoxes,
+          previousElementsLength: lastAction.previousElementsLength
+        }]);
       }
     });
 
     // Reset the flag
     undoInProgressRef.current = false;
-  }, [actionHistory, elements, fillAreas, selectedElementId, labels]);
+  }, [actionHistory, elements, fillAreas, selection, labels]);
 
   const redo = useCallback(() => {
     if (redoHistory.length === 0) {
@@ -2175,6 +2695,42 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
           type: 'label',
           previousState: currentLabels
         }]);
+      } else if (lastRedoAction.type === 'paste') {
+        // Redo paste
+        const pasteAction = lastRedoAction as Action & { previousElements: GraphElement[]; previousLabels: GraphLabels };
+        const currentElements = [...elements];
+        const currentLabels = { ...labels };
+
+        setElements(pasteAction.previousElements);
+        setLabels(pasteAction.previousLabels);
+
+        setActionHistory(prev => [...prev, {
+          type: 'paste',
+          previousElements: currentElements,
+          previousLabels: currentLabels
+        }]);
+      } else if (lastRedoAction.type === 'delete') {
+        // Redo delete
+        const deleteAction = lastRedoAction as Action & { deletedElements: {id: number, element: GraphElement}[]; deletedTextBoxes: TextBox[]; previousElementsLength: number };
+
+        const newElements = [...elements];
+        deleteAction.deletedElements.forEach(({ id }) => {
+          newElements.splice(id, 1);
+        });
+
+        const newTextBoxes = labels.textBoxes.filter(
+          tb => !deleteAction.deletedTextBoxes.find(dtb => dtb.id === tb.id)
+        );
+
+        setElements(newElements);
+        setLabels(prev => ({ ...prev, textBoxes: newTextBoxes }));
+
+        setActionHistory(prev => [...prev, {
+          type: 'delete',
+          deletedElements: deleteAction.deletedElements,
+          deletedTextBoxes: deleteAction.deletedTextBoxes,
+          previousElementsLength: deleteAction.previousElementsLength
+        }]);
       }
     });
   }, [redoHistory, elements, labels]);
@@ -2204,6 +2760,183 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     setRedoHistory([]);
   }, [elements]);
 
+  // Copy selected objects to clipboard
+  const handleCopy = useCallback(() => {
+    if (selection.elementIds.size === 0 && selection.textBoxIds.size === 0) {
+      return; // Nothing to copy
+    }
+
+    // Gather selected elements
+    const selectedElements = Array.from(selection.elementIds)
+      .map(id => elements[id])
+      .filter(Boolean);
+
+    const selectedTextBoxes = Array.from(selection.textBoxIds)
+      .map(id => labels.textBoxes.find(tb => tb.id === id))
+      .filter(Boolean) as TextBox[];
+
+    const clipboardData: ClipboardData = {
+      elements: selectedElements.map(el => ({ ...el, points: el.points.map(p => ({ ...p })), controlPoint: el.controlPoint ? { ...el.controlPoint } : undefined })),
+      textBoxes: selectedTextBoxes.map(tb => ({ ...tb })),
+      timestamp: Date.now()
+    };
+
+    setClipboard(clipboardData);
+
+    // Also copy to system clipboard as JSON
+    try {
+      navigator.clipboard.writeText(JSON.stringify(clipboardData, null, 2))
+        .catch(err => console.warn('Failed to copy to system clipboard:', err));
+    } catch (err) {
+      console.warn('Failed to copy to system clipboard:', err);
+    }
+  }, [selection, elements, labels.textBoxes]);
+
+  // Paste objects from clipboard
+  const handlePaste = useCallback(() => {
+    if (!clipboard) return;
+
+    const PASTE_OFFSET = { x: 0.5, y: -0.5 }; // Graph units
+    const CANVAS_OFFSET = { x: 20, y: 20 }; // Pixels
+
+    // Create action for undo
+    const previousElements = [...elements];
+    const previousLabels = { ...labels };
+
+    // Paste elements with offset
+    const pastedElements = clipboard.elements.map(el => ({
+      ...el,
+      points: el.points.map(p => ({
+        x: p.x + PASTE_OFFSET.x,
+        y: p.y + PASTE_OFFSET.y
+      })),
+      controlPoint: el.controlPoint ? {
+        x: el.controlPoint.x + PASTE_OFFSET.x,
+        y: el.controlPoint.y + PASTE_OFFSET.y
+      } : undefined
+    }));
+
+    const newElementStartIndex = elements.length;
+    setElements(prev => [...prev, ...pastedElements]);
+
+    // Paste textboxes with offset (canvas coordinates)
+    const pastedTextBoxes = clipboard.textBoxes.map(tb => ({
+      ...tb,
+      id: crypto.randomUUID(), // New UUID
+      x: tb.x + CANVAS_OFFSET.x,
+      y: tb.y + CANVAS_OFFSET.y
+    }));
+
+    setLabels(prev => ({
+      ...prev,
+      textBoxes: [...prev.textBoxes, ...pastedTextBoxes]
+    }));
+
+    // Select pasted objects
+    const newElementIds = new Set(
+      Array.from({ length: pastedElements.length }, (_, i) => newElementStartIndex + i)
+    );
+    const newTextBoxIds = new Set(pastedTextBoxes.map(tb => tb.id));
+
+    setSelection({ elementIds: newElementIds, textBoxIds: newTextBoxIds });
+
+    // Add to history
+    setActionHistory(prev => [...prev, {
+      type: 'paste',
+      previousElements,
+      previousLabels
+    }]);
+    setRedoHistory([]);
+
+    // Notify parent components
+    if (onElementsChange) {
+      onElementsChange(elements.length + pastedElements.length);
+    }
+    if (onLabelsChange && pastedTextBoxes.length > 0) {
+      onLabelsChange({ ...labels, textBoxes: [...labels.textBoxes, ...pastedTextBoxes] });
+    }
+  }, [clipboard, elements, labels, onElementsChange, onLabelsChange]);
+
+  // Delete selected objects
+  const handleDelete = useCallback(() => {
+    if (selection.elementIds.size === 0 && selection.textBoxIds.size === 0) {
+      return;
+    }
+
+    // Create undo action - store deleted elements with their IDs
+    const deletedElements = Array.from(selection.elementIds)
+      .sort((a, b) => b - a) // Sort descending for removal
+      .map(id => ({ id, element: elements[id] }));
+
+    const deletedTextBoxes = Array.from(selection.textBoxIds)
+      .map(id => labels.textBoxes.find(tb => tb.id === id))
+      .filter(Boolean) as TextBox[];
+
+    // Remove elements (from highest index to lowest to maintain indices)
+    const newElements = [...elements];
+    deletedElements.forEach(({ id }) => {
+      newElements.splice(id, 1);
+    });
+    setElements(newElements);
+
+    // Remove textboxes
+    const newTextBoxes = labels.textBoxes.filter(
+      tb => !selection.textBoxIds.has(tb.id)
+    );
+    setLabels(prev => ({ ...prev, textBoxes: newTextBoxes }));
+
+    // Clear selection
+    setSelection({ elementIds: new Set(), textBoxIds: new Set() });
+
+    // Add to history
+    setActionHistory(prev => [...prev, {
+      type: 'delete',
+      deletedElements,
+      deletedTextBoxes,
+      previousElementsLength: elements.length
+    }]);
+    setRedoHistory([]);
+
+    // Notify parent components
+    if (onElementsChange) {
+      onElementsChange(newElements.length);
+    }
+    if (onLabelsChange && deletedTextBoxes.length > 0) {
+      onLabelsChange({ ...labels, textBoxes: newTextBoxes });
+    }
+  }, [selection, elements, labels, onElementsChange, onLabelsChange]);
+
+  // Keyboard event listener for copy/paste/delete
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Only handle if in select or textbox mode
+      if (drawMode !== 'select' && drawMode !== 'textbox') return;
+
+      // Check if user is typing in an input field
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
+        return; // Don't intercept
+      }
+
+      const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+      const cmdOrCtrl = isMac ? e.metaKey : e.ctrlKey;
+
+      if (cmdOrCtrl && e.key === 'c') {
+        e.preventDefault();
+        handleCopy();
+      } else if (cmdOrCtrl && e.key === 'v') {
+        e.preventDefault();
+        handlePaste();
+      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        e.preventDefault();
+        handleDelete();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [drawMode, handleCopy, handlePaste, handleDelete]);
+
   const exportToPNG = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -2222,6 +2955,60 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     });
   }, []);
 
+  const exportToJPEG = useCallback((quality: number = 0.9) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    canvas.toBlob((blob) => {
+      if (blob) {
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+        link.download = `easygraphs-${timestamp}.jpg`;
+        link.href = url;
+        link.click();
+        URL.revokeObjectURL(url);
+      }
+    }, 'image/jpeg', quality);
+  }, []);
+
+  const exportToPDF = useCallback((pageSize: string = 'letter', orientation: 'portrait' | 'landscape' = 'landscape') => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const imgData = canvas.toDataURL('image/png');
+
+    import('jspdf').then(({ jsPDF }) => {
+      const pdf = new jsPDF({ orientation, unit: 'px', format: pageSize });
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const margin = 40;
+
+      const availableWidth = pageWidth - (margin * 2);
+      const availableHeight = pageHeight - (margin * 2);
+      const canvasAspectRatio = canvas.width / canvas.height;
+      const availableAspectRatio = availableWidth / availableHeight;
+
+      let imgWidth, imgHeight, xOffset, yOffset;
+
+      if (canvasAspectRatio > availableAspectRatio) {
+        imgWidth = availableWidth;
+        imgHeight = availableWidth / canvasAspectRatio;
+        xOffset = margin;
+        yOffset = margin + (availableHeight - imgHeight) / 2;
+      } else {
+        imgHeight = availableHeight;
+        imgWidth = availableHeight * canvasAspectRatio;
+        xOffset = margin + (availableWidth - imgWidth) / 2;
+        yOffset = margin;
+      }
+
+      pdf.addImage(imgData, 'PNG', xOffset, yOffset, imgWidth, imgHeight);
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+      pdf.save(`easygraphs-${timestamp}.pdf`);
+    });
+  }, []);
+
   const getExportData = useCallback((): GraphExportData => {
     return {
       elements: [...elements],
@@ -2233,7 +3020,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
 
   const importData = useCallback((data: GraphExportData) => {
     // Clear current state
-    setSelectedElementId(null);
+    setSelection({ elementIds: new Set(), textBoxIds: new Set() });
     setDraggingPointIndex(null);
     setDraggingControlPointFlag(false);
     setCurrentPoints([]);
@@ -2259,34 +3046,45 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
   }, [onElementsChange]);
 
   const getSelectedElement = useCallback(() => {
-    if (selectedElementId === null || selectedElementId >= elements.length) {
+    // Return first selected element for backward compatibility
+    const firstElementId = Array.from(selection.elementIds)[0];
+    if (firstElementId === undefined || firstElementId >= elements.length) {
       return null;
     }
-    return elements[selectedElementId];
-  }, [selectedElementId, elements]);
+    return elements[firstElementId];
+  }, [selection, elements]);
 
   const getSelectedElementId = useCallback(() => {
-    return selectedElementId;
-  }, [selectedElementId]);
+    // Return first selected element ID for backward compatibility
+    const firstElementId = Array.from(selection.elementIds)[0];
+    return firstElementId !== undefined ? firstElementId : null;
+  }, [selection]);
 
-  const updateSelectedElement = useCallback((color: string, lineWidth: number, addToHistory: boolean = false, previousState?: GraphElement) => {
-    if (selectedElementId === null || selectedElementId >= elements.length) {
+  const updateSelectedElement = useCallback((color: string, lineWidth: number, addToHistory: boolean = false, previousState?: GraphElement, lineStyleParam?: 'solid' | 'dashed' | 'dotted', opacityParam?: number) => {
+    // Update first selected element for backward compatibility
+    const firstElementId = Array.from(selection.elementIds)[0];
+    if (firstElementId === undefined || firstElementId >= elements.length) {
       return;
     }
 
-    const currentElement = elements[selectedElementId];
+    const currentElement = elements[firstElementId];
 
     // Only update if something actually changed
-    if (currentElement.color === color && currentElement.lineWidth === lineWidth) {
+    if (currentElement.color === color &&
+        currentElement.lineWidth === lineWidth &&
+        currentElement.lineStyle === lineStyleParam &&
+        currentElement.opacity === opacityParam) {
       return;
     }
 
     setElements(prev => {
       const newElements = [...prev];
-      const element = { ...newElements[selectedElementId] };
+      const element = { ...newElements[firstElementId] };
       element.color = color;
       element.lineWidth = lineWidth;
-      newElements[selectedElementId] = element;
+      if (lineStyleParam !== undefined) element.lineStyle = lineStyleParam;
+      if (opacityParam !== undefined) element.opacity = opacityParam;
+      newElements[firstElementId] = element;
       return newElements;
     });
 
@@ -2295,12 +3093,12 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       const stateToSave = previousState || currentElement;
       setActionHistory(prev => [...prev, {
         type: 'modify',
-        elementId: selectedElementId,
+        elementId: firstElementId,
         previousState: stateToSave
       }]);
       setRedoHistory([]);
     }
-  }, [selectedElementId, elements]);
+  }, [selection, elements]);
 
   const addModifyAction = useCallback((elementId: number, previousState: GraphElement) => {
     setActionHistory(prev => [...prev, {
@@ -2365,7 +3163,10 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
   }, [labels, onLabelsChange]);
 
   const selectTextBox = useCallback((id: string) => {
-    setSelectedTextBoxId(id);
+    setSelection({
+      elementIds: new Set(),
+      textBoxIds: new Set([id])
+    });
   }, []);
 
   // Expose methods via imperative handle
@@ -2378,6 +3179,8 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     redo,
     getElements: () => elements,
     exportToPNG,
+    exportToJPEG,
+    exportToPDF,
     getSelectedElement,
     getSelectedElementId,
     updateSelectedElement,
@@ -2389,8 +3192,12 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     updateLabels,
     addTextBox,
     deleteTextBox,
-    selectTextBox
-  }), [addLineByCoordinates, addFillArea, addFunction, clearCanvas, undo, redo, elements, exportToPNG, getSelectedElement, getSelectedElementId, updateSelectedElement, addModifyAction, getExportData, importData, togglePointProjection, getLabels, updateLabels, addTextBox, deleteTextBox, selectTextBox]);
+    selectTextBox,
+    copySelection: handleCopy,
+    pasteSelection: handlePaste,
+    deleteSelection: handleDelete,
+    getSelection: () => selection
+  }), [addLineByCoordinates, addFillArea, addFunction, clearCanvas, undo, redo, elements, exportToPNG, exportToJPEG, exportToPDF, getSelectedElement, getSelectedElementId, updateSelectedElement, addModifyAction, getExportData, importData, togglePointProjection, getLabels, updateLabels, addTextBox, deleteTextBox, selectTextBox, handleCopy, handlePaste, handleDelete, selection]);
 
   return (
     <canvas
