@@ -30,6 +30,7 @@ export default function Home() {
   const [labels, setLabels] = useState<GraphLabels>(DEFAULT_LABELS);
   const [showCharacterPalette, setShowCharacterPalette] = useState(false);
   const [hasSelection, setHasSelection] = useState(false);
+  const isUpdatingFromSelectionRef = useRef(false);
 
   // Responsive canvas sizing
   useEffect(() => {
@@ -62,20 +63,34 @@ export default function Home() {
   // Update toolbar to match selected element's properties and save original state
   useEffect(() => {
     if (selectedElement && selectedElementId !== null) {
+      // Set flag to indicate we're updating from selection (not user input)
+      isUpdatingFromSelectionRef.current = true;
+
       setStrokeColor(selectedElement.color);
       setStrokeWidth(selectedElement.lineWidth);
       setLineStyle(selectedElement.lineStyle || 'solid');
       setOpacity(selectedElement.opacity ?? 1);
       // Save original state when a new element is selected
       originalElementRef.current = { ...selectedElement };
+
+      // Reset flag after state updates
+      setTimeout(() => {
+        isUpdatingFromSelectionRef.current = false;
+      }, 0);
     } else if (selectedElementId === null) {
       // Selection cleared - clear original state
       originalElementRef.current = null;
     }
   }, [selectedElement, selectedElementId, elements]);
 
-  // Apply toolbar changes to selected element in real-time (without adding to history yet)
+  // Apply toolbar changes to selected element when user actively changes values
   useEffect(() => {
+    // Don't apply if we're updating toolbar from selection (avoid feedback loop)
+    if (isUpdatingFromSelectionRef.current) {
+      return;
+    }
+
+    // Apply user changes to selected element
     if (selectedElementId !== null && canvasRef.current && selectedElement && originalElementRef.current) {
       // Check if values actually changed from current element state
       if (selectedElement.color !== strokeColor ||
@@ -86,7 +101,7 @@ export default function Home() {
         canvasRef.current.updateSelectedElement(strokeColor, strokeWidth, false, undefined, lineStyle, opacity);
       }
     }
-    
+
     // Note: selectedElement is intentionally excluded to avoid extra re-renders when the element updates
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [strokeColor, strokeWidth, lineStyle, opacity, selectedElementId]);

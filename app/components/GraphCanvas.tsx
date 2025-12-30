@@ -260,6 +260,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
   // Selection box for multi-select
   const [selectionBox, setSelectionBox] = useState<{start: Point, end: Point} | null>(null);
   const [isDrawingSelectionBox, setIsDrawingSelectionBox] = useState(false);
+  const justFinishedSelectionBoxRef = useRef(false);
 
   // Clipboard for copy/paste
   const [clipboard, setClipboard] = useState<ClipboardData | null>(null);
@@ -336,12 +337,13 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       return canvasX >= minX && canvasX <= maxX && canvasY >= minY && canvasY <= maxY;
     };
 
-    // Helper to check if a line segment intersects with the selection box
+    // Helper to check if a line segment intersects with or is contained in the selection box
     const lineIntersectsBox = (x1: number, y1: number, x2: number, y2: number): boolean => {
-      // If either endpoint is in the box, the line intersects
+      // If either endpoint is in the box, the line is selected
       if (isPointInBox(x1, y1) || isPointInBox(x2, y2)) return true;
 
-      // Check if line crosses any of the 4 box edges
+      // If both endpoints are outside but on opposite sides of the box,
+      // the line might pass through it - check edge intersections
       const boxEdges = [
         { x1: minX, y1: minY, x2: maxX, y2: minY }, // top
         { x1: maxX, y1: minY, x2: maxX, y2: maxY }, // right
@@ -1393,60 +1395,44 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       if (selectedElementId < elements.length) {
         const selectedElement = elements[selectedElementId];
 
-        // First, draw a highlighted stroke around the entire element
-        ctx.globalAlpha = 1;
-        ctx.strokeStyle = '#E67E22';
-        ctx.lineWidth = Math.max(selectedElement.lineWidth || 2, 2) + 4;
-        ctx.setLineDash([]);
-
-        if (selectedElement.type === 'line' && selectedElement.points.length === 2) {
-          const p1 = graphToCanvas(selectedElement.points[0].x, selectedElement.points[0].y);
-          const p2 = graphToCanvas(selectedElement.points[1].x, selectedElement.points[1].y);
-          ctx.beginPath();
-          ctx.moveTo(p1.x, p1.y);
-          ctx.lineTo(p2.x, p2.y);
-          ctx.stroke();
-        } else if (selectedElement.type === 'bezier' && selectedElement.points.length === 2 && selectedElement.controlPoint) {
-          const p1 = graphToCanvas(selectedElement.points[0].x, selectedElement.points[0].y);
-          const p2 = graphToCanvas(selectedElement.points[1].x, selectedElement.points[1].y);
-          const cp = graphToCanvas(selectedElement.controlPoint.x, selectedElement.controlPoint.y);
-          ctx.beginPath();
-          ctx.moveTo(p1.x, p1.y);
-          ctx.quadraticCurveTo(cp.x, cp.y, p2.x, p2.y);
-          ctx.stroke();
-        } else if (selectedElement.type === 'freehand' && selectedElement.points.length > 0) {
-          const firstPoint = graphToCanvas(selectedElement.points[0].x, selectedElement.points[0].y);
-          ctx.beginPath();
-          ctx.moveTo(firstPoint.x, firstPoint.y);
-          for (let i = 1; i < selectedElement.points.length; i++) {
-            const point = graphToCanvas(selectedElement.points[i].x, selectedElement.points[i].y);
-            ctx.lineTo(point.x, point.y);
-          }
-          ctx.stroke();
-        }
-
         // Draw control points for selected element
         if (selectedElement.type === 'line') {
-          // Draw start and end points
+          // Draw start and end points with glow effect
           selectedElement.points.forEach((point, idx) => {
             const canvasPoint = graphToCanvas(point.x, point.y);
+
+            // Outer glow
+            ctx.fillStyle = 'rgba(230, 126, 34, 0.3)';
+            ctx.beginPath();
+            ctx.arc(canvasPoint.x, canvasPoint.y, 14, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Main circle
             ctx.fillStyle = '#E67E22';
             ctx.strokeStyle = '#FFFFFF';
-            ctx.lineWidth = 2;
+            ctx.lineWidth = 3;
             ctx.beginPath();
-            ctx.arc(canvasPoint.x, canvasPoint.y, 8, 0, Math.PI * 2);
+            ctx.arc(canvasPoint.x, canvasPoint.y, 10, 0, Math.PI * 2);
             ctx.fill();
             ctx.stroke();
           });
         } else if (selectedElement.type === 'bezier') {
-          // Draw start and end points
+          // Draw start and end points with glow effect
           selectedElement.points.forEach((point, idx) => {
             const canvasPoint = graphToCanvas(point.x, point.y);
+
+            // Outer glow
+            ctx.fillStyle = 'rgba(230, 126, 34, 0.3)';
+            ctx.beginPath();
+            ctx.arc(canvasPoint.x, canvasPoint.y, 14, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Main circle
             ctx.fillStyle = '#E67E22';
             ctx.strokeStyle = '#FFFFFF';
-            ctx.lineWidth = 2;
+            ctx.lineWidth = 3;
             ctx.beginPath();
-            ctx.arc(canvasPoint.x, canvasPoint.y, 8, 0, Math.PI * 2);
+            ctx.arc(canvasPoint.x, canvasPoint.y, 10, 0, Math.PI * 2);
             ctx.fill();
             ctx.stroke();
           });
@@ -1479,35 +1465,52 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
             ctx.setLineDash([]);
           }
         } else if (selectedElement.type === 'freehand') {
-          // Draw all points
-          selectedElement.points.forEach((point, idx) => {
-            const canvasPoint = graphToCanvas(point.x, point.y);
-            ctx.fillStyle = '#E67E22';
-            ctx.strokeStyle = '#FFFFFF';
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.arc(canvasPoint.x, canvasPoint.y, 6, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.stroke();
+          // Draw a glow around first and last points
+          [0, selectedElement.points.length - 1].forEach(idx => {
+            if (idx < selectedElement.points.length) {
+              const point = selectedElement.points[idx];
+              const canvasPoint = graphToCanvas(point.x, point.y);
+
+              // Outer glow
+              ctx.fillStyle = 'rgba(230, 126, 34, 0.3)';
+              ctx.beginPath();
+              ctx.arc(canvasPoint.x, canvasPoint.y, 12, 0, Math.PI * 2);
+              ctx.fill();
+
+              // Main circle
+              ctx.fillStyle = '#E67E22';
+              ctx.strokeStyle = '#FFFFFF';
+              ctx.lineWidth = 3;
+              ctx.beginPath();
+              ctx.arc(canvasPoint.x, canvasPoint.y, 8, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.stroke();
+            }
           });
         } else if (selectedElement.type === 'point') {
-          // Draw selection ring around point
+          // Draw selection glow around point
           const point = selectedElement.points[0];
           const canvasPoint = graphToCanvas(point.x, point.y);
           const pointSize = selectedElement.pointSize || selectedElement.lineWidth * 2;
+
+          // Outer glow
+          ctx.fillStyle = 'rgba(230, 126, 34, 0.3)';
+          ctx.beginPath();
+          ctx.arc(canvasPoint.x, canvasPoint.y, pointSize + 10, 0, Math.PI * 2);
+          ctx.fill();
 
           // Draw outer selection ring
           ctx.strokeStyle = '#E67E22';
           ctx.lineWidth = 3;
           ctx.beginPath();
-          ctx.arc(canvasPoint.x, canvasPoint.y, pointSize + 5, 0, Math.PI * 2);
+          ctx.arc(canvasPoint.x, canvasPoint.y, pointSize + 6, 0, Math.PI * 2);
           ctx.stroke();
 
           // Draw inner white ring
           ctx.strokeStyle = '#FFFFFF';
           ctx.lineWidth = 2;
           ctx.beginPath();
-          ctx.arc(canvasPoint.x, canvasPoint.y, pointSize + 3, 0, Math.PI * 2);
+          ctx.arc(canvasPoint.x, canvasPoint.y, pointSize + 4, 0, Math.PI * 2);
           ctx.stroke();
         }
       }
@@ -1805,6 +1808,12 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     // Ignore clicks when panning or just after panning
     if (isPanning || justPannedRef.current) {
       justPannedRef.current = false;
+      return;
+    }
+
+    // Ignore clicks if we just finished drawing a selection box
+    if (justFinishedSelectionBoxRef.current) {
+      justFinishedSelectionBoxRef.current = false;
       return;
     }
 
@@ -2345,6 +2354,10 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       setSelection(selectedObjects);
       setIsDrawingSelectionBox(false);
       setSelectionBox(null);
+
+      // Set flag to prevent onClick from clearing the selection
+      justFinishedSelectionBoxRef.current = true;
+
       return;
     }
 
