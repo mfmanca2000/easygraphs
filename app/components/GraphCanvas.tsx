@@ -170,6 +170,7 @@ export interface EasyGraphsExport {
     elements: GraphElement[];
     fillAreas: FillArea[];
     labels: GraphLabels;
+    groups: Group[];
   };
   settings: {
     strokeColor: string;
