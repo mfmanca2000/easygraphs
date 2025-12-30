@@ -10,9 +10,11 @@ export interface CoordinateInputProps {
   selectedElementId?: number | null;
   selectedElements?: Array<{ id: number; element: GraphElement }>;
   onTogglePointProjection?: (elementId: number) => void;
+  showIntersections?: boolean;
+  onToggleIntersections?: () => void;
 }
 
-export default function CoordinateInput({ onAddLine, currentPoint, selectedElement, selectedElementId, selectedElements, onTogglePointProjection }: CoordinateInputProps) {
+export default function CoordinateInput({ onAddLine, currentPoint, selectedElement, selectedElementId, selectedElements, onTogglePointProjection, showIntersections, onToggleIntersections }: CoordinateInputProps) {
   const [startX, setStartX] = useState('');
   const [startY, setStartY] = useState('');
   const [endX, setEndX] = useState('');
@@ -135,6 +137,23 @@ export default function CoordinateInput({ onAddLine, currentPoint, selectedEleme
           + Add Line
         </button>
       </form>
+
+      {/* Intersection toggle button */}
+      {onToggleIntersections && (
+        <div className="mt-4 pt-4 border-t" style={{ borderColor: 'var(--graph-lines)' }}>
+          <button
+            onClick={onToggleIntersections}
+            className="w-full px-4 py-2.5 rounded-md text-sm font-medium transition-all"
+            style={{
+              background: showIntersections ? '#9B59B6' : 'transparent',
+              color: showIntersections ? 'white' : '#9B59B6',
+              border: '1.5px solid #9B59B6'
+            }}
+          >
+            {showIntersections ? '✓ Hide' : '+ Show'} Intersections
+          </button>
+        </div>
+      )}
 
       {/* Selected Elements Display */}
       {selectedElements && selectedElements.length > 0 ? (

@@ -21,6 +21,13 @@ export interface Point {
   y: number;
 }
 
+export interface IntersectionPoint {
+  point: Point;
+  elementId1: number;  // First element in the intersection
+  elementId2: number;  // Second element in the intersection
+  showProjection?: boolean;  // Whether to show projection for this intersection
+}
+
 export interface GraphElement {
   type: 'line' | 'bezier' | 'freehand' | 'function' | 'point';
   points: Point[];
@@ -197,11 +204,14 @@ export interface GraphCanvasProps {
   curveType: 'quadratic' | 'cubic' | 's-curve';
   drawMode: DrawMode;
   scale: { x: number; y: number };
+  showIntersections?: boolean;
+  intersectionPoints?: IntersectionPoint[];
   onCoordinateClick?: (point: Point) => void;
   onSelectionChange?: (elementId: number | null) => void;
   onElementsChange?: (elementCount: number) => void;
   onScaleChange?: (scale: { x: number; y: number }) => void;
   onLabelsChange?: (labels: GraphLabels) => void;
+  onIntersectionsChange?: (intersections: IntersectionPoint[]) => void;
 }
 
 export interface GraphCanvasHandle {
@@ -222,6 +232,7 @@ export interface GraphCanvasHandle {
   getExportData: () => GraphExportData;
   importData: (data: GraphExportData) => void;
   togglePointProjection: (elementId: number) => void;
+  calculateAllIntersections: () => IntersectionPoint[];
   getLabels: () => GraphLabels;
   updateLabels: (newLabels: GraphLabels, addToHistory?: boolean) => void;
   addTextBox: (textBox: TextBox) => void;
@@ -234,6 +245,7 @@ export interface GraphCanvasHandle {
   groupSelection: () => void;
   ungroupSelection: () => void;
   getGroups: () => Group[];
+  resetPanOffset: () => void;
 }
 
 const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function GraphCanvasComponent(props, ref) {
@@ -250,11 +262,14 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     curveType,
     drawMode,
     scale,
+    showIntersections = false,
+    intersectionPoints = [],
     onCoordinateClick,
     onSelectionChange,
     onElementsChange,
     onScaleChange,
-    onLabelsChange
+    onLabelsChange,
+    onIntersectionsChange
   } = props;
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -349,6 +364,25 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       y: centerY - graphY * scale.y
     };
   }, [scale, panOffset, getTitleOffset]);
+
+  // Helper function to check if a click is near the axis (for panning trigger)
+  const isClickNearAxis = useCallback((canvasX: number, canvasY: number): boolean => {
+    const canvas = canvasRef.current;
+    if (!canvas) return false;
+
+    const titleOffset = getTitleOffset();
+    const centerX = canvas.width / 2 + panOffset.x;
+    const centerY = (canvas.height + titleOffset) / 2 + panOffset.y;
+
+    // Define threshold in pixels (how close to axis counts as "near")
+    const threshold = 20;
+
+    // Check if near vertical axis (X=0) or horizontal axis (Y=0)
+    const nearVerticalAxis = Math.abs(canvasX - centerX) < threshold;
+    const nearHorizontalAxis = Math.abs(canvasY - centerY) < threshold;
+
+    return nearVerticalAxis || nearHorizontalAxis;
+  }, [panOffset, getTitleOffset]);
 
   // Helper function to check if an element is within selection box
   const isElementInSelectionBox = useCallback((element: GraphElement, box: {start: Point, end: Point}): boolean => {
@@ -1855,7 +1889,68 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       ctx.strokeRect(minX, minY, maxX - minX, maxY - minY);
       ctx.setLineDash([]);
     });
-  }, [drawGrid, elements, fillAreas, currentPoints, tempControlPoint, tempControlPoint2, curveType, isDrawing, drawMode, strokeColor, strokeWidth, graphToCanvas, drawLine, drawBezier, drawFreehand, drawPoint, drawFunction, fillAreaForElement, selection, selectionBox, isDrawingSelectionBox, simplifyPoints, renderLabels, groups]);
+
+    // Draw global intersection markers if enabled
+    if (showIntersections && intersectionPoints.length > 0) {
+      intersectionPoints.forEach((intersection) => {
+        const intersectionCanvas = graphToCanvas(intersection.point.x, intersection.point.y);
+
+        // Draw intersection marker (small circle with different color)
+        ctx.fillStyle = '#9B59B6'; // Purple color for intersections
+        ctx.beginPath();
+        ctx.arc(intersectionCanvas.x, intersectionCanvas.y, 5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Draw a small ring around it
+        ctx.strokeStyle = '#9B59B6';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(intersectionCanvas.x, intersectionCanvas.y, 8, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Draw projection lines for this intersection if enabled
+        if (intersection.showProjection) {
+          ctx.globalAlpha = 0.7;
+          ctx.strokeStyle = '#9B59B6';
+          ctx.lineWidth = 1.5;
+          ctx.setLineDash([4, 4]); // Dashed lines for intersection projections
+
+          const xAxis = graphToCanvas(intersection.point.x, 0);
+          const yAxis = graphToCanvas(0, intersection.point.y);
+
+          // Vertical line to x-axis
+          ctx.beginPath();
+          ctx.moveTo(intersectionCanvas.x, intersectionCanvas.y);
+          ctx.lineTo(xAxis.x, xAxis.y);
+          ctx.stroke();
+
+          // Horizontal line to y-axis
+          ctx.beginPath();
+          ctx.moveTo(intersectionCanvas.x, intersectionCanvas.y);
+          ctx.lineTo(yAxis.x, yAxis.y);
+          ctx.stroke();
+
+          // Draw small markers on axes
+          ctx.setLineDash([]); // Solid lines
+          ctx.fillStyle = '#9B59B6';
+
+          // Marker on x-axis
+          ctx.beginPath();
+          ctx.arc(xAxis.x, xAxis.y, 3, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Marker on y-axis
+          ctx.beginPath();
+          ctx.arc(yAxis.x, yAxis.y, 3, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Reset line dash and opacity
+          ctx.setLineDash([]);
+          ctx.globalAlpha = 1;
+        }
+      });
+    }
+  }, [drawGrid, elements, fillAreas, currentPoints, tempControlPoint, tempControlPoint2, curveType, isDrawing, drawMode, strokeColor, strokeWidth, graphToCanvas, drawLine, drawBezier, drawFreehand, drawPoint, drawFunction, fillAreaForElement, selection, selectionBox, isDrawingSelectionBox, simplifyPoints, renderLabels, groups, showIntersections, intersectionPoints]);
 
   // Re-render when dependencies change
   useEffect(() => {
@@ -2443,12 +2538,18 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       const clickedTextBoxId = findClickedTextBox(canvasX, canvasY);
 
       if (clickedElementId === null && clickedTextBoxId === null) {
-        // No object clicked, start selection box
-        setIsDrawingSelectionBox(true);
-        setSelectionBox({
-          start: { x: canvasX, y: canvasY },
-          end: { x: canvasX, y: canvasY }
-        });
+        // Check if clicking near axis - if so, start panning
+        if (isClickNearAxis(canvasX, canvasY)) {
+          setIsPanning(true);
+          setPanStart({ x: canvasX, y: canvasY });
+        } else {
+          // No object clicked and not near axis, start selection box
+          setIsDrawingSelectionBox(true);
+          setSelectionBox({
+            start: { x: canvasX, y: canvasY },
+            end: { x: canvasX, y: canvasY }
+          });
+        }
       }
     }
   };
@@ -3197,6 +3298,185 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     setRedoHistory([]);
   }, [elements]);
 
+  // Calculate intersection points between all elements
+  const calculateAllIntersections = useCallback((): IntersectionPoint[] => {
+    const intersections: IntersectionPoint[] = [];
+
+    // Check all pairs of elements
+    for (let i = 0; i < elements.length; i++) {
+      for (let j = i + 1; j < elements.length; j++) {
+        const el1 = elements[i];
+        const el2 = elements[j];
+
+        // Get line segments from each element
+        const segments1 = getElementSegments(el1);
+        const segments2 = getElementSegments(el2);
+
+        // Check all segment pairs for intersections
+        segments1.forEach(seg1 => {
+          segments2.forEach(seg2 => {
+            const intersect = lineIntersection(seg1.start, seg1.end, seg2.start, seg2.end);
+            if (intersect) {
+              // Check if we already have this intersection (avoid duplicates)
+              const isDuplicate = intersections.some(existing =>
+                Math.abs(existing.point.x - intersect.x) < 0.01 &&
+                Math.abs(existing.point.y - intersect.y) < 0.01
+              );
+              if (!isDuplicate) {
+                intersections.push({
+                  point: intersect,
+                  elementId1: i,
+                  elementId2: j,
+                  showProjection: false
+                });
+              }
+            }
+          });
+        });
+      }
+    }
+
+    return intersections;
+  }, [elements]);
+
+  // Helper to get line segments from an element
+  const getElementSegments = (element: GraphElement): Array<{ start: Point; end: Point }> => {
+    const segments: Array<{ start: Point; end: Point }> = [];
+
+    if (element.type === 'line') {
+      segments.push({
+        start: element.points[0],
+        end: element.points[1]
+      });
+    } else if (element.type === 'bezier') {
+      // For bezier curves, sample the curve into line segments
+      if (element.points.length >= 2 && element.controlPoint) {
+        const sampledPoints = sampleBezierCurve(element);
+        for (let i = 0; i < sampledPoints.length - 1; i++) {
+          segments.push({
+            start: sampledPoints[i],
+            end: sampledPoints[i + 1]
+          });
+        }
+      }
+    } else if (element.type === 'freehand' || element.type === 'function') {
+      // For freehand and function curves, use the sampled points as line segments
+      for (let i = 0; i < element.points.length - 1; i++) {
+        segments.push({
+          start: element.points[i],
+          end: element.points[i + 1]
+        });
+      }
+    }
+    // Note: point type doesn't have segments
+
+    return segments;
+  };
+
+  // Helper to sample a bezier curve into discrete points
+  const sampleBezierCurve = (element: GraphElement): Point[] => {
+    if (!element.controlPoint || element.points.length < 2) return [];
+
+    const start = element.points[0];
+    const end = element.points[1];
+    const control = element.controlPoint;
+    const elementCurveType = element.curveType || 'quadratic';
+
+    // Number of samples - more samples = better intersection detection but slower
+    const numSamples = 50;
+    const sampledPoints: Point[] = [];
+
+    if (elementCurveType === 'quadratic') {
+      // Quadratic Bezier curve: B(t) = (1-t)^2*P0 + 2*(1-t)*t*P1 + t^2*P2
+      for (let i = 0; i <= numSamples; i++) {
+        const t = i / numSamples;
+        const oneMinusT = 1 - t;
+        const x = oneMinusT * oneMinusT * start.x +
+                  2 * oneMinusT * t * control.x +
+                  t * t * end.x;
+        const y = oneMinusT * oneMinusT * start.y +
+                  2 * oneMinusT * t * control.y +
+                  t * t * end.y;
+        sampledPoints.push({ x, y });
+      }
+    } else if (elementCurveType === 'cubic' && element.controlPoint2) {
+      // Cubic Bezier curve: B(t) = (1-t)^3*P0 + 3*(1-t)^2*t*P1 + 3*(1-t)*t^2*P2 + t^3*P3
+      const control2 = element.controlPoint2;
+      for (let i = 0; i <= numSamples; i++) {
+        const t = i / numSamples;
+        const oneMinusT = 1 - t;
+        const x = oneMinusT * oneMinusT * oneMinusT * start.x +
+                  3 * oneMinusT * oneMinusT * t * control.x +
+                  3 * oneMinusT * t * t * control2.x +
+                  t * t * t * end.x;
+        const y = oneMinusT * oneMinusT * oneMinusT * start.y +
+                  3 * oneMinusT * oneMinusT * t * control.y +
+                  3 * oneMinusT * t * t * control2.y +
+                  t * t * t * end.y;
+        sampledPoints.push({ x, y });
+      }
+    } else if (elementCurveType === 's-curve') {
+      // S-curve: calculate control points similar to drawBezier
+      const dx = end.x - start.x;
+      const dy = end.y - start.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      const ctrlDx = control.x - (start.x + end.x) / 2;
+      const ctrlDy = control.y - (start.y + end.y) / 2;
+      const intensity = dist > 0 ? Math.sqrt(ctrlDx * ctrlDx + ctrlDy * ctrlDy) / dist : 0;
+
+      const cp1 = {
+        x: start.x + dx * 0.33 + ctrlDy * intensity,
+        y: start.y + dy * 0.33 - ctrlDx * intensity
+      };
+      const cp2 = {
+        x: start.x + dx * 0.67 - ctrlDy * intensity,
+        y: start.y + dy * 0.67 + ctrlDx * intensity
+      };
+
+      // Sample cubic bezier with calculated control points
+      for (let i = 0; i <= numSamples; i++) {
+        const t = i / numSamples;
+        const oneMinusT = 1 - t;
+        const x = oneMinusT * oneMinusT * oneMinusT * start.x +
+                  3 * oneMinusT * oneMinusT * t * cp1.x +
+                  3 * oneMinusT * t * t * cp2.x +
+                  t * t * t * end.x;
+        const y = oneMinusT * oneMinusT * oneMinusT * start.y +
+                  3 * oneMinusT * oneMinusT * t * cp1.y +
+                  3 * oneMinusT * t * t * cp2.y +
+                  t * t * t * end.y;
+        sampledPoints.push({ x, y });
+      }
+    }
+
+    return sampledPoints;
+  };
+
+  // Helper function to find line-line intersection
+  const lineIntersection = (p1: Point, p2: Point, p3: Point, p4: Point): Point | null => {
+    const x1 = p1.x, y1 = p1.y;
+    const x2 = p2.x, y2 = p2.y;
+    const x3 = p3.x, y3 = p3.y;
+    const x4 = p4.x, y4 = p4.y;
+
+    const denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+    if (Math.abs(denom) < 0.0001) return null; // Parallel lines
+
+    const t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom;
+    const u = -((x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3)) / denom;
+
+    if (t >= 0 && t <= 1 && u >= 0 && u <= 1) {
+      return {
+        x: x1 + t * (x2 - x1),
+        y: y1 + t * (y2 - y1)
+      };
+    }
+
+    return null;
+  };
+
+
   // Group selected objects
   const handleGroup = useCallback(() => {
     // Check: need at least 2 elements
@@ -3785,6 +4065,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     getExportData,
     importData,
     togglePointProjection,
+    calculateAllIntersections,
     getLabels,
     updateLabels,
     addTextBox,
@@ -3796,8 +4077,9 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     getSelection: () => selection,
     groupSelection: handleGroup,
     ungroupSelection: handleUngroup,
-    getGroups: () => groups
-  }), [addLineByCoordinates, addFillArea, addFunction, clearCanvas, undo, redo, elements, exportToPNG, exportToJPEG, exportToPDF, getSelectedElement, getSelectedElementId, updateSelectedElement, addModifyAction, getExportData, importData, togglePointProjection, getLabels, updateLabels, addTextBox, deleteTextBox, selectTextBox, handleCopy, handlePaste, handleDelete, selection, handleGroup, handleUngroup, groups]);
+    getGroups: () => groups,
+    resetPanOffset: () => setPanOffset({ x: 0, y: 0 })
+  }), [addLineByCoordinates, addFillArea, addFunction, clearCanvas, undo, redo, elements, exportToPNG, exportToJPEG, exportToPDF, getSelectedElement, getSelectedElementId, updateSelectedElement, addModifyAction, getExportData, importData, togglePointProjection, calculateAllIntersections, getLabels, updateLabels, addTextBox, deleteTextBox, selectTextBox, handleCopy, handlePaste, handleDelete, selection, handleGroup, handleUngroup, groups]);
 
   return (
     <canvas

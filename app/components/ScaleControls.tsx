@@ -5,9 +5,10 @@ import { Slider } from './ui/slider';
 export interface ScaleControlsProps {
   scale: { x: number; y: number };
   onScaleChange: (scale: { x: number; y: number }) => void;
+  onResetPan?: () => void;
 }
 
-export default function ScaleControls({ scale, onScaleChange }: ScaleControlsProps) {
+export default function ScaleControls({ scale, onScaleChange, onResetPan }: ScaleControlsProps) {
   return (
     <div className="control-panel rounded-lg p-5">
       <h3 className="text-sm font-semibold mb-4" style={{
@@ -122,7 +123,10 @@ export default function ScaleControls({ scale, onScaleChange }: ScaleControlsPro
 
         {/* Reset button */}
         <button
-          onClick={() => onScaleChange({ x: 40, y: 40 })}
+          onClick={() => {
+            onScaleChange({ x: 40, y: 40 });
+            onResetPan?.();
+          }}
           className="w-full px-4 py-2.5 rounded-md text-sm font-medium transition-all"
           style={{
             background: 'transparent',

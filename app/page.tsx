@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { flushSync } from 'react-dom';
-import GraphCanvas, { DrawMode, Point, GraphCanvasHandle, GraphElement, EasyGraphsExport, GraphLabels, DEFAULT_LABELS } from './components/GraphCanvas';
+import GraphCanvas, { DrawMode, Point, GraphCanvasHandle, GraphElement, EasyGraphsExport, GraphLabels, DEFAULT_LABELS, IntersectionPoint } from './components/GraphCanvas';
 import Toolbar from './components/Toolbar';
 import ScaleControls from './components/ScaleControls';
 import CoordinateInput from './components/CoordinateInput';
@@ -39,6 +39,16 @@ export default function Home() {
   });
   const [currentGroups, setCurrentGroups] = useState<any[]>([]);
   const isUpdatingFromSelectionRef = useRef(false);
+  const [showIntersections, setShowIntersections] = useState(false);
+  const [intersectionPoints, setIntersectionPoints] = useState<IntersectionPoint[]>([]);
+
+  // Recalculate intersections when elements change and intersection mode is on
+  useEffect(() => {
+    if (showIntersections && canvasRef.current) {
+      const intersections = canvasRef.current.calculateAllIntersections();
+      setIntersectionPoints(intersections);
+    }
+  }, [elements, showIntersections]);
 
   // Responsive canvas sizing
   useEffect(() => {
@@ -143,6 +153,9 @@ export default function Home() {
   const handleClear = () => {
     if (canvasRef.current) {
       canvasRef.current.clearCanvas();
+      // Clear intersection points when canvas is cleared
+      setIntersectionPoints([]);
+      setShowIntersections(false);
     }
   };
 
@@ -404,6 +417,31 @@ export default function Home() {
     }
   };
 
+  const handleToggleIntersections = () => {
+    const newShowIntersections = !showIntersections;
+    setShowIntersections(newShowIntersections);
+
+    if (newShowIntersections && canvasRef.current) {
+      // Calculate intersections when turning on
+      const intersections = canvasRef.current.calculateAllIntersections();
+      setIntersectionPoints(intersections);
+    } else {
+      // Clear intersections when turning off
+      setIntersectionPoints([]);
+    }
+  };
+
+  const handleToggleIntersectionProjection = (intersectionIndex: number) => {
+    setIntersectionPoints(prev => {
+      const newIntersections = [...prev];
+      newIntersections[intersectionIndex] = {
+        ...newIntersections[intersectionIndex],
+        showProjection: !newIntersections[intersectionIndex].showProjection
+      };
+      return newIntersections;
+    });
+  };
+
   const handleLabelsChange = (newLabels: GraphLabels, addToHistory: boolean = false) => {
     setLabels(newLabels);
     if (canvasRef.current) {
@@ -500,6 +538,7 @@ export default function Home() {
             <ScaleControls
               scale={scale}
               onScaleChange={setScale}
+              onResetPan={() => canvasRef.current?.resetPanOffset()}
             />
 
             {/* Info Panel - Desktop only */}
@@ -563,6 +602,8 @@ export default function Home() {
                   curveType={curveType}
                   drawMode={drawMode}
                   scale={scale}
+                  showIntersections={showIntersections}
+                  intersectionPoints={intersectionPoints}
                   onCoordinateClick={handleCoordinateClick}
                   onSelectionChange={handleSelectionChange}
                   onElementsChange={handleElementsChange}
@@ -646,7 +687,65 @@ export default function Home() {
                   })).filter(item => item.element) : undefined
                 }
                 onTogglePointProjection={handleTogglePointProjection}
+                showIntersections={showIntersections}
+                onToggleIntersections={handleToggleIntersections}
               />
+            )}
+
+            {/* Intersection Points Panel */}
+            {showIntersections && intersectionPoints.length > 0 && (
+              <div className="control-panel rounded-lg p-5">
+                <h3 className="text-sm font-semibold mb-4" style={{
+                  color: '#9B59B6',
+                  fontFamily: 'JetBrains Mono, monospace',
+                  letterSpacing: '0.05em',
+                  textTransform: 'uppercase'
+                }}>
+                  Intersections ({intersectionPoints.length})
+                </h3>
+                <div className="max-h-96 overflow-y-auto space-y-3">
+                  {intersectionPoints.map((intersection, idx) => (
+                    <div key={idx} className="p-3 rounded-md" style={{
+                      background: 'rgba(155, 89, 182, 0.05)',
+                      border: '1px solid rgba(155, 89, 182, 0.3)'
+                    }}>
+                      <div className="flex justify-between items-start mb-2">
+                        <span className="text-xs font-semibold" style={{ color: '#9B59B6' }}>
+                          Point #{idx + 1}
+                        </span>
+                        <span className="text-xs" style={{
+                          color: 'var(--pencil-lead)',
+                          opacity: 0.6,
+                          fontFamily: 'JetBrains Mono, monospace'
+                        }}>
+                          El {intersection.elementId1} ∩ El {intersection.elementId2}
+                        </span>
+                      </div>
+                      <div className="px-3 py-2 rounded-md mb-2" style={{
+                        background: 'rgba(155, 89, 182, 0.1)',
+                        border: '1px solid rgba(155, 89, 182, 0.2)',
+                        fontFamily: 'JetBrains Mono, monospace',
+                        fontSize: '0.875rem',
+                        color: '#9B59B6',
+                        fontWeight: 600
+                      }}>
+                        ({intersection.point.x.toFixed(2)}, {intersection.point.y.toFixed(2)})
+                      </div>
+                      <button
+                        onClick={() => handleToggleIntersectionProjection(idx)}
+                        className="w-full px-3 py-2 rounded-md text-sm font-medium transition-all"
+                        style={{
+                          background: intersection.showProjection ? '#9B59B6' : 'transparent',
+                          color: intersection.showProjection ? 'white' : '#9B59B6',
+                          border: `1.5px solid #9B59B6`
+                        }}
+                      >
+                        {intersection.showProjection ? '✓ Hide' : '+ Show'} Projection
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
 
             <LabelControls
