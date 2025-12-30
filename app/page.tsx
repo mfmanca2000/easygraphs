@@ -576,7 +576,7 @@ export default function Home() {
             />
           </CollapsiblePanel>
 
-          <CollapsiblePanel id="labels" title="Labels & Text" defaultExpanded={false}>
+          <CollapsiblePanel id="labels" title="Labels & Text" defaultExpanded={true}>
             <LabelControls
               labels={labels}
               onLabelsChange={handleLabelsChange}
@@ -586,7 +586,7 @@ export default function Home() {
             />
           </CollapsiblePanel>
 
-          <CollapsiblePanel id="fill" title="Fill Areas" defaultExpanded={false}>
+          <CollapsiblePanel id="fill" title="Fill Areas" defaultExpanded={true}>
             <FillAreaControls
               elementCount={elementCount}
               elements={elements}

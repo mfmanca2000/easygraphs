@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { Copy, Clipboard, Trash2, Undo2, Redo2, Save, Upload, Eraser } from 'lucide-react';
 
 export interface ActionsPanelProps {
   onUndo: () => void;
@@ -51,7 +52,7 @@ export default function ActionsPanel({
         <div className="flex gap-2">
           <button
             onClick={onUndo}
-            className="px-3 py-2 rounded-md text-sm font-medium transition-all"
+            className="px-3 py-2 rounded-md text-sm font-medium transition-all flex items-center gap-2"
             style={{
               background: 'transparent',
               color: 'var(--architect-blue)',
@@ -59,11 +60,11 @@ export default function ActionsPanel({
             }}
             title="Undo (Ctrl+Z)"
           >
-            ↶ Undo
+            <Undo2 size={16} />
           </button>
           <button
             onClick={onRedo}
-            className="px-3 py-2 rounded-md text-sm font-medium transition-all"
+            className="px-3 py-2 rounded-md text-sm font-medium transition-all flex items-center gap-2"
             style={{
               background: 'transparent',
               color: 'var(--architect-blue)',
@@ -71,7 +72,7 @@ export default function ActionsPanel({
             }}
             title="Redo (Ctrl+Y)"
           >
-            ↷ Redo
+            <Redo2 size={16} />
           </button>
         </div>
 
@@ -83,7 +84,7 @@ export default function ActionsPanel({
           <button
             onClick={onCopy}
             disabled={!hasSelection}
-            className="px-3 py-2 rounded-md text-sm font-medium transition-all"
+            className="px-3 py-2 rounded-md text-sm font-medium transition-all flex items-center gap-2"
             style={{
               background: hasSelection ? 'transparent' : 'var(--graph-lines)',
               color: hasSelection ? 'var(--architect-blue)' : 'var(--pencil-lead)',
@@ -93,11 +94,11 @@ export default function ActionsPanel({
             }}
             title="Copy (Ctrl+C)"
           >
-            Copy
+            <Copy size={16} />
           </button>
           <button
             onClick={onPaste}
-            className="px-3 py-2 rounded-md text-sm font-medium transition-all"
+            className="px-3 py-2 rounded-md text-sm font-medium transition-all flex items-center gap-2"
             style={{
               background: 'transparent',
               color: 'var(--architect-blue)',
@@ -105,12 +106,12 @@ export default function ActionsPanel({
             }}
             title="Paste (Ctrl+V)"
           >
-            Paste
+            <Clipboard size={16} />
           </button>
           <button
             onClick={onDelete}
             disabled={!hasSelection}
-            className="px-3 py-2 rounded-md text-sm font-medium transition-all"
+            className="px-3 py-2 rounded-md text-sm font-medium transition-all flex items-center gap-2"
             style={{
               background: hasSelection ? 'transparent' : 'var(--graph-lines)',
               color: hasSelection ? 'var(--architect-red)' : 'var(--pencil-lead)',
@@ -120,7 +121,7 @@ export default function ActionsPanel({
             }}
             title="Delete (Del/Backspace)"
           >
-            Delete
+            <Trash2 size={16} />
           </button>
         </div>
 
@@ -245,9 +246,12 @@ export default function ActionsPanel({
             ↓ Export
           </button>
 
+          {/* Divider */}
+          <div style={{ width: '1px', height: '32px', background: 'var(--canvas-border)' }} />
+
           <button
             onClick={onExportJSON}
-            className="px-3 py-2 rounded-md text-sm font-medium transition-all"
+            className="px-3 py-2 rounded-md text-sm font-medium transition-all flex items-center gap-2"
             style={{
               background: 'transparent',
               color: 'var(--architect-blue)',
@@ -255,12 +259,12 @@ export default function ActionsPanel({
             }}
             title="Export as JSON"
           >
-            JSON
+            <Save size={16} />
           </button>
 
           <button
             onClick={onImportJSON}
-            className="px-3 py-2 rounded-md text-sm font-medium transition-all"
+            className="px-3 py-2 rounded-md text-sm font-medium transition-all flex items-center gap-2"
             style={{
               background: 'transparent',
               color: 'var(--architect-blue)',
@@ -268,7 +272,7 @@ export default function ActionsPanel({
             }}
             title="Import JSON"
           >
-            ↑ Import
+            <Upload size={16} />
           </button>
         </div>
 
@@ -278,14 +282,15 @@ export default function ActionsPanel({
         {/* Clear All */}
         <button
           onClick={onClear}
-          className="px-4 py-2 rounded-md text-sm font-medium transition-all"
+          className="px-4 py-2 rounded-md text-sm font-medium transition-all flex items-center gap-2"
           style={{
             background: 'rgba(231, 76, 60, 0.1)',
             color: 'var(--architect-red)',
             border: '1.5px solid var(--architect-red)'
           }}
+          title="Clear All"
         >
-          ✕ Clear All
+          <Eraser size={16} />
         </button>
       </div>
     </div>
