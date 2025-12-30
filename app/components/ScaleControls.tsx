@@ -10,17 +10,7 @@ export interface ScaleControlsProps {
 
 export default function ScaleControls({ scale, onScaleChange, onResetPan }: ScaleControlsProps) {
   return (
-    <div className="control-panel rounded-lg p-5">
-      <h3 className="text-sm font-semibold mb-4" style={{
-        color: 'var(--architect-blue)',
-        fontFamily: 'JetBrains Mono, monospace',
-        letterSpacing: '0.05em',
-        textTransform: 'uppercase'
-      }}>
-        Axis Scale
-      </h3>
-
-      <div className="space-y-4">
+    <div className="space-y-4">
         {/* X Scale */}
         <div>
           <label className="text-sm font-medium block mb-2" style={{ color: 'var(--pencil-lead)' }}>
@@ -136,7 +126,6 @@ export default function ScaleControls({ scale, onScaleChange, onResetPan }: Scal
         >
           Reset to Default
         </button>
-      </div>
     </div>
   );
 }

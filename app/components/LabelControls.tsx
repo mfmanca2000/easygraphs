@@ -148,17 +148,7 @@ export default function LabelControls({
   };
 
   return (
-    <div className="control-panel rounded-lg p-5">
-      {/* Header */}
-      <h3 className="text-sm font-semibold mb-4" style={{
-        color: 'var(--architect-blue)',
-        fontFamily: 'JetBrains Mono, monospace',
-        letterSpacing: '0.05em',
-        textTransform: 'uppercase'
-      }}>
-        Labels & Text
-      </h3>
-
+    <div>
       {/* Tabs */}
       <div className="flex mb-4" style={{ borderBottom: '1.5px solid var(--canvas-border)' }}>
         <button

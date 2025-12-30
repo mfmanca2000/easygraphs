@@ -48,16 +48,7 @@ export default function FunctionInput({ onAddFunction, strokeColor, strokeWidth 
   };
 
   return (
-    <div className="control-panel rounded-lg p-5">
-      <h3 className="text-sm font-semibold mb-4" style={{
-        color: 'var(--architect-blue)',
-        fontFamily: 'JetBrains Mono, monospace',
-        letterSpacing: '0.05em',
-        textTransform: 'uppercase'
-      }}>
-        Function Plot
-      </h3>
-
+    <div>
       <form onSubmit={handleSubmit} className="space-y-4">
         {/* Formula Input */}
         <div>

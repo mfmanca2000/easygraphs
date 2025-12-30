@@ -27,17 +27,7 @@ export default function FillAreaControls({ elementCount, elements, onAddFill }: 
   };
 
   return (
-    <div className="control-panel rounded-lg p-5">
-      <h3 className="text-sm font-semibold mb-4" style={{
-        color: 'var(--architect-blue)',
-        fontFamily: 'JetBrains Mono, monospace',
-        letterSpacing: '0.05em',
-        textTransform: 'uppercase'
-      }}>
-        Fill Area
-      </h3>
-
-      <div className="space-y-4">
+    <div className="space-y-4">
         {/* Element Selection */}
         <div>
           <label className="text-sm font-medium block mb-2" style={{ color: 'var(--pencil-lead)' }}>
@@ -190,7 +180,6 @@ export default function FillAreaControls({ elementCount, elements, onAddFill }: 
             Draw elements first to add fills
           </p>
         )}
-      </div>
     </div>
   );
 }

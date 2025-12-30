@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { flushSync } from 'react-dom';
-import { HelpCircle } from 'lucide-react';
+import { HelpCircle, Menu } from 'lucide-react';
 import GraphCanvas, { DrawMode, Point, GraphCanvasHandle, GraphElement, EasyGraphsExport, GraphLabels, DEFAULT_LABELS, IntersectionPoint } from './components/GraphCanvas';
 import Toolbar from './components/Toolbar';
 import ScaleControls from './components/ScaleControls';
@@ -12,9 +12,14 @@ import FunctionInput from './components/FunctionInput';
 import LabelControls from './components/LabelControls';
 import CharacterPalette from './components/CharacterPalette';
 import QuickGuidePanel from './components/QuickGuidePanel';
+import { CollapsiblePanel } from './components/CollapsiblePanel';
+import { Sidebar } from './components/Sidebar';
+import { MobileDrawer } from './components/MobileDrawer';
+import ActionsPanel from './components/ActionsPanel';
 
 export default function Home() {
   const canvasRef = useRef<GraphCanvasHandle>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [showGrid, setShowGrid] = useState(true);
   const [showAxisUnits, setShowAxisUnits] = useState(true);
   const [strokeColor, setStrokeColor] = useState('#000000');
@@ -36,7 +41,7 @@ export default function Home() {
   const [showCharacterPalette, setShowCharacterPalette] = useState(false);
   const [showQuickGuide, setShowQuickGuide] = useState(false);
   const [hasSelection, setHasSelection] = useState(false);
-  const [currentSelection, setCurrentSelection] = useState<{elementIds: Set<number>, textBoxIds: Set<string>}>({
+  const [currentSelection, setCurrentSelection] = useState<{ elementIds: Set<number>, textBoxIds: Set<string> }>({
     elementIds: new Set(),
     textBoxIds: new Set()
   });
@@ -44,6 +49,8 @@ export default function Home() {
   const isUpdatingFromSelectionRef = useRef(false);
   const [showIntersections, setShowIntersections] = useState(false);
   const [intersectionPoints, setIntersectionPoints] = useState<IntersectionPoint[]>([]);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
 
   // Recalculate intersections when elements change and intersection mode is on
   useEffect(() => {
@@ -53,32 +60,39 @@ export default function Home() {
     }
   }, [elements, showIntersections]);
 
-  // Responsive canvas sizing
+  // Responsive canvas sizing - measure the actual container
   useEffect(() => {
     const updateCanvasSize = () => {
-      const width = window.innerWidth;
-      if (width < 640) {
-        // Mobile: full width minus padding
-        setCanvasSize({ width: width - 64, height: (width - 64) * 0.75 });
-      } else if (width < 1024) {
-        // Tablet: stacked layout, use available width
-        setCanvasSize({ width: Math.min(700, width - 96), height: Math.min(525, (width - 96) * 0.75) });
-      } else if (width < 1440) {
-        // Small desktop: 3-column layout, account for sidebars (320px each) + gaps (48px) + padding (64px)
-        const availableWidth = width - 320 - 320 - 48 - 64;
-        const canvasWidth = Math.min(600, Math.max(400, availableWidth));
-        setCanvasSize({ width: canvasWidth, height: canvasWidth * 0.75 });
-      } else {
-        // Large desktop: full 800px canvas
-        const availableWidth = width - 320 - 320 - 48 - 64;
-        const canvasWidth = Math.min(800, Math.max(600, availableWidth));
-        setCanvasSize({ width: canvasWidth, height: canvasWidth * 0.75 });
-      }
+      if (!containerRef.current) return;
+
+      const container = containerRef.current;
+      const containerWidth = container.clientWidth;
+      const containerHeight = container.clientHeight;
+
+      // Account for padding inside the container (p-4 = 16px, sm:p-6 = 24px)
+      const padding = window.innerWidth >= 640 ? 48 : 32; // 24px * 2 or 16px * 2
+
+      setCanvasSize({
+        width: Math.max(400, containerWidth - padding),
+        height: Math.max(400, containerHeight - padding)
+      });
     };
 
+    // Initial size
     updateCanvasSize();
+
+    // Use ResizeObserver for more accurate container size tracking
+    const resizeObserver = new ResizeObserver(updateCanvasSize);
+    if (containerRef.current) {
+      resizeObserver.observe(containerRef.current);
+    }
+
     window.addEventListener('resize', updateCanvasSize);
-    return () => window.removeEventListener('resize', updateCanvasSize);
+
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', updateCanvasSize);
+    };
   }, []);
 
   // Update toolbar to match selected element's properties and save original state
@@ -116,10 +130,10 @@ export default function Home() {
     if (selectedElementId !== null && canvasRef.current && selectedElement && originalElementRef.current) {
       // Check if values actually changed from current element state
       if (selectedElement.color !== strokeColor ||
-          selectedElement.lineWidth !== strokeWidth ||
-          selectedElement.lineStyle !== lineStyle ||
-          selectedElement.opacity !== opacity ||
-          selectedElement.arrowType !== arrowType) {
+        selectedElement.lineWidth !== strokeWidth ||
+        selectedElement.lineStyle !== lineStyle ||
+        selectedElement.opacity !== opacity ||
+        selectedElement.arrowType !== arrowType) {
         // Apply change without adding to history
         canvasRef.current.updateSelectedElement(strokeColor, strokeWidth, false, undefined, lineStyle, opacity, arrowType);
       }
@@ -142,10 +156,10 @@ export default function Home() {
         const currentState = elements[prevId];
         // Check if the element was actually modified
         if (currentState.color !== originalElementRef.current.color ||
-            currentState.lineWidth !== originalElementRef.current.lineWidth ||
-            currentState.lineStyle !== originalElementRef.current.lineStyle ||
-            currentState.opacity !== originalElementRef.current.opacity ||
-            currentState.arrowType !== originalElementRef.current.arrowType) {
+          currentState.lineWidth !== originalElementRef.current.lineWidth ||
+          currentState.lineStyle !== originalElementRef.current.lineStyle ||
+          currentState.opacity !== originalElementRef.current.opacity ||
+          currentState.arrowType !== originalElementRef.current.arrowType) {
           // Add a single modify action for all the changes made to the previous element
           canvasRef.current.addModifyAction(prevId, originalElementRef.current);
         }
@@ -524,10 +538,22 @@ export default function Home() {
           </p>
         </div>
 
-        {/* Main Layout */}
-        <div className="flex flex-col lg:flex-row gap-6 items-start justify-center">
-          {/* Left Sidebar */}
-          <aside className="w-full lg:w-80 lg:shrink-0 space-y-4 animate-slideInLeft delay-100 order-2 lg:order-1">
+        {/* Mobile Hamburger Button */}
+        <button
+          className="fixed top-4 left-4 z-50 lg:hidden p-3 rounded-full shadow-lg transition-all hover:scale-110"
+          style={{
+            background: 'var(--architect-blue)',
+            color: 'white',
+          }}
+          onClick={() => setMobileDrawerOpen(true)}
+          aria-label="Open menu"
+        >
+          <Menu size={24} />
+        </button>
+
+        {/* Mobile Drawer */}
+        <MobileDrawer isOpen={mobileDrawerOpen} onClose={() => setMobileDrawerOpen(false)}>
+          <CollapsiblePanel id="toolbar" title="Drawing Tools" defaultExpanded={true}>
             <Toolbar
               showGrid={showGrid}
               onToggleGrid={() => setShowGrid(!showGrid)}
@@ -547,40 +573,126 @@ export default function Home() {
               onCurveTypeChange={setCurveType}
               drawMode={drawMode}
               onDrawModeChange={setDrawMode}
-              onClear={handleClear}
-              onUndo={handleUndo}
-              onRedo={handleRedo}
-              onExport={handleExport}
-              onExportJPEG={handleExportJPEG}
-              onExportPDF={handleExportPDF}
-              onExportJSON={handleExportJSON}
-              onImportJSON={handleImportJSON}
-              onCopy={handleCopy}
-              onPaste={handlePaste}
-              onDelete={handleDelete}
-              hasSelection={hasSelection}
-              onGroup={handleGroup}
-              onUngroup={handleUngroup}
-              canGroup={canGroup}
-              canUngroup={canUngroup}
             />
+          </CollapsiblePanel>
 
+          <CollapsiblePanel id="labels" title="Labels & Text" defaultExpanded={false}>
+            <LabelControls
+              labels={labels}
+              onLabelsChange={handleLabelsChange}
+              elements={elements}
+              onCharacterPaletteOpen={() => setShowCharacterPalette(true)}
+              onTextBoxSelect={handleTextBoxSelect}
+            />
+          </CollapsiblePanel>
+
+          <CollapsiblePanel id="fill" title="Fill Areas" defaultExpanded={false}>
+            <FillAreaControls
+              elementCount={elementCount}
+              elements={elements}
+              onAddFill={handleAddFill}
+            />
+          </CollapsiblePanel>
+
+          <CollapsiblePanel id="scale" title="Scale Controls" defaultExpanded={true}>
             <ScaleControls
               scale={scale}
               onScaleChange={setScale}
               onResetPan={() => canvasRef.current?.resetPanOffset()}
             />
+          </CollapsiblePanel>
 
-            {/* Info Panel - Desktop only */}
-            <div className="control-panel rounded-lg p-4 hidden lg:block">
-              <h3 className="text-sm font-semibold mb-3" style={{
-                color: 'var(--architect-blue)',
-                fontFamily: 'JetBrains Mono, monospace',
-                letterSpacing: '0.05em',
-                textTransform: 'uppercase'
-              }}>
-                Session Info
-              </h3>
+
+          
+          <CollapsiblePanel id="session" title="Session Info" defaultExpanded={true}>
+            <div className="grid grid-cols-3 gap-3" style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '0.875rem' }}>
+              <div className="text-center">
+                <div style={{ color: 'var(--pencil-lead)', opacity: 0.6, fontSize: '0.75rem', marginBottom: '4px' }}>Elements</div>
+                <div style={{
+                  color: 'var(--architect-orange)',
+                  fontWeight: 600,
+                  fontSize: '1.25rem'
+                }}>
+                  {elementCount}
+                </div>
+              </div>
+              <div className="text-center">
+                <div style={{ color: 'var(--pencil-lead)', opacity: 0.6, fontSize: '0.75rem', marginBottom: '4px' }}>Mode</div>
+                <div style={{
+                  color: 'var(--architect-blue)',
+                  fontWeight: 600,
+                  textTransform: 'capitalize',
+                  fontSize: '0.875rem'
+                }}>
+                  {drawMode}
+                </div>
+              </div>
+              <div className="text-center">
+                <div style={{ color: 'var(--pencil-lead)', opacity: 0.6, fontSize: '0.75rem', marginBottom: '4px' }}>Scale</div>
+                <div style={{ color: 'var(--pencil-lead)', fontWeight: 600, fontSize: '0.875rem' }}>
+                  {scale.x}×{scale.y}
+                </div>
+              </div>
+            </div>
+          </CollapsiblePanel>
+        </MobileDrawer>
+
+        {/* Main Layout */}
+        <div className="flex gap-6">
+          {/* Desktop Sidebar */}
+          <Sidebar onCollapseChange={setSidebarCollapsed}>
+            <CollapsiblePanel id="toolbar" title="Drawing Tools" defaultExpanded={true}>
+              <Toolbar
+                showGrid={showGrid}
+                onToggleGrid={() => setShowGrid(!showGrid)}
+                showAxisUnits={showAxisUnits}
+                onToggleAxisUnits={() => setShowAxisUnits(!showAxisUnits)}
+                strokeColor={strokeColor}
+                onStrokeColorChange={setStrokeColor}
+                strokeWidth={strokeWidth}
+                onStrokeWidthChange={setStrokeWidth}
+                lineStyle={lineStyle}
+                onLineStyleChange={setLineStyle}
+                opacity={opacity}
+                onOpacityChange={setOpacity}
+                arrowType={arrowType}
+                onArrowTypeChange={setArrowType}
+                curveType={curveType}
+                onCurveTypeChange={setCurveType}
+                drawMode={drawMode}
+                onDrawModeChange={setDrawMode}
+              />
+            </CollapsiblePanel>
+
+            <CollapsiblePanel id="labels" title="Labels & Text" defaultExpanded={false}>
+              <LabelControls
+                labels={labels}
+                onLabelsChange={handleLabelsChange}
+                elements={elements}
+                onCharacterPaletteOpen={() => setShowCharacterPalette(true)}
+                onTextBoxSelect={handleTextBoxSelect}
+              />
+            </CollapsiblePanel>
+
+            <CollapsiblePanel id="fill" title="Fill Areas" defaultExpanded={false}>
+              <FillAreaControls
+                elementCount={elementCount}
+                elements={elements}
+                onAddFill={handleAddFill}
+              />
+            </CollapsiblePanel>
+
+            <CollapsiblePanel id="scale" title="Scale Controls" defaultExpanded={true}>
+              <ScaleControls
+                scale={scale}
+                onScaleChange={setScale}
+                onResetPan={() => canvasRef.current?.resetPanOffset()}
+              />
+            </CollapsiblePanel>
+
+
+
+            <CollapsiblePanel id="session" title="Session Info" defaultExpanded={true}>
               <div className="space-y-2" style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '0.875rem' }}>
                 <div className="flex justify-between items-center">
                   <span style={{ color: 'var(--pencil-lead)', opacity: 0.7 }}>Elements:</span>
@@ -611,13 +723,49 @@ export default function Home() {
                   </span>
                 </div>
               </div>
-            </div>
-          </aside>
+            </CollapsiblePanel>
+          </Sidebar>
 
-          {/* Center - Canvas Area */}
-          <main className="w-full lg:w-auto lg:flex-1 lg:min-w-0 lg:max-w-full animate-fadeInUp delay-200 order-1 lg:order-2">
-            <div className="canvas-container rounded-lg p-4 sm:p-6">
-              <div className="overflow-x-auto flex justify-center">
+          {/* Canvas Area - takes remaining space */}
+          <main className="flex-1 animate-fadeInUp delay-200 space-y-4">
+            {/* Actions Panel */}
+            <div style={{
+              width: '100%',
+              maxWidth: '92%',
+              margin: '0 auto 16px auto'
+            }}>
+              <ActionsPanel
+                onUndo={handleUndo}
+                onRedo={handleRedo}
+                onExport={handleExport}
+                onExportJPEG={handleExportJPEG}
+                onExportPDF={handleExportPDF}
+                onExportJSON={handleExportJSON}
+                onImportJSON={handleImportJSON}
+                onCopy={handleCopy}
+                onPaste={handlePaste}
+                onDelete={handleDelete}
+                hasSelection={hasSelection}
+                onGroup={handleGroup}
+                onUngroup={handleUngroup}
+                canGroup={canGroup}
+                canUngroup={canUngroup}
+                onClear={handleClear}
+              />
+            </div>
+
+            <div
+              ref={containerRef}
+              className="canvas-container rounded-lg p-4 sm:p-6"
+              style={{
+                width: '100%',
+                maxWidth: '92%',
+                height: 'calc(100vh - 650px)',
+                minHeight: '400px',
+                margin: '0 auto'
+              }}
+            >
+              <div className="flex justify-center items-center h-full" style={{ overflow: 'hidden' }}>
                 <GraphCanvas
                   ref={canvasRef}
                   width={canvasSize.width}
@@ -642,148 +790,103 @@ export default function Home() {
                 />
               </div>
             </div>
-          </main>
 
-          {/* Right Sidebar */}
-          <aside className="w-full lg:w-80 lg:shrink-0 space-y-4 animate-slideInRight delay-300 order-3">
-            {drawMode === 'function' ? (
-              <FunctionInput
-                onAddFunction={handleAddFunction}
-                strokeColor={strokeColor}
-                strokeWidth={strokeWidth}
-              />
-            ) : (
-              <CoordinateInput
-                onAddLine={handleAddLineByCoordinates}
-                onAddPoint={handleAddPointByCoordinates}
-                currentPoint={currentPoint}
-                selectedElement={selectedElement}
-                selectedElementId={selectedElementId}
-                selectedElements={currentSelection.elementIds.size > 0 ?
-                  Array.from(currentSelection.elementIds).map(id => ({
-                    id,
-                    element: elements[id]
-                  })).filter(item => item.element) : undefined
-                }
-                onTogglePointProjection={handleTogglePointProjection}
-                showIntersections={showIntersections}
-                onToggleIntersections={handleToggleIntersections}
-                drawMode={drawMode}
-                elementCount={elementCount}
-              />
-            )}
-
-            {/* Intersection Points Panel */}
-            {showIntersections && intersectionPoints.length > 0 && (
-              <div className="control-panel rounded-lg p-5">
-                <h3 className="text-sm font-semibold mb-4" style={{
-                  color: '#9B59B6',
-                  fontFamily: 'JetBrains Mono, monospace',
-                  letterSpacing: '0.05em',
-                  textTransform: 'uppercase'
-                }}>
-                  Intersections ({intersectionPoints.length})
+            {/* Coordinates Panel - below canvas */}
+            <div style={{
+              width: '100%',
+              maxWidth: '92%',
+              margin: '16px auto 0 auto'
+            }}>
+              <div className="control-panel rounded-lg p-4 sm:p-6">
+                <h3 className="text-lg font-semibold mb-4" style={{ color: 'var(--architect-blue)' }}>
+                  {drawMode === 'function' ? 'Function Plot' : 'Coordinates'}
                 </h3>
-                <div className="max-h-96 overflow-y-auto space-y-3">
-                  {intersectionPoints.map((intersection, idx) => (
-                    <div key={idx} className="p-3 rounded-md" style={{
-                      background: 'rgba(155, 89, 182, 0.05)',
-                      border: '1px solid rgba(155, 89, 182, 0.3)'
-                    }}>
-                      <div className="flex justify-between items-start mb-2">
-                        <span className="text-xs font-semibold" style={{ color: '#9B59B6' }}>
-                          Point #{idx + 1}
-                        </span>
-                        <span className="text-xs" style={{
-                          color: 'var(--pencil-lead)',
-                          opacity: 0.6,
-                          fontFamily: 'JetBrains Mono, monospace'
-                        }}>
-                          El {intersection.elementId1} ∩ El {intersection.elementId2}
-                        </span>
-                      </div>
-                      <div className="px-3 py-2 rounded-md mb-2" style={{
-                        background: 'rgba(155, 89, 182, 0.1)',
-                        border: '1px solid rgba(155, 89, 182, 0.2)',
-                        fontFamily: 'JetBrains Mono, monospace',
-                        fontSize: '0.875rem',
-                        color: '#9B59B6',
-                        fontWeight: 600
-                      }}>
-                        ({intersection.point.x.toFixed(2)}, {intersection.point.y.toFixed(2)})
-                      </div>
-                      <button
-                        onClick={() => handleToggleIntersectionProjection(idx)}
-                        className="w-full px-3 py-2 rounded-md text-sm font-medium transition-all"
-                        style={{
-                          background: intersection.showProjection ? '#9B59B6' : 'transparent',
-                          color: intersection.showProjection ? 'white' : '#9B59B6',
-                          border: `1.5px solid #9B59B6`
-                        }}
-                      >
-                        {intersection.showProjection ? '✓ Hide' : '+ Show'} Projection
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <LabelControls
-              labels={labels}
-              onLabelsChange={handleLabelsChange}
-              elements={elements}
-              onCharacterPaletteOpen={() => setShowCharacterPalette(true)}
-              onTextBoxSelect={handleTextBoxSelect}
-            />
-
-            <FillAreaControls
-              elementCount={elementCount}
-              elements={elements}
-              onAddFill={handleAddFill}
-            />
-
-            {/* Mobile Info Panel */}
-            <div className="control-panel rounded-lg p-4 lg:hidden">
-              <h3 className="text-sm font-semibold mb-3" style={{
-                color: 'var(--architect-blue)',
-                fontFamily: 'JetBrains Mono, monospace',
-                letterSpacing: '0.05em',
-                textTransform: 'uppercase'
-              }}>
-                Session Info
-              </h3>
-              <div className="grid grid-cols-3 gap-3" style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '0.875rem' }}>
-                <div className="text-center">
-                  <div style={{ color: 'var(--pencil-lead)', opacity: 0.6, fontSize: '0.75rem', marginBottom: '4px' }}>Elements</div>
-                  <div style={{
-                    color: 'var(--architect-orange)',
-                    fontWeight: 600,
-                    fontSize: '1.25rem'
-                  }}>
-                    {elementCount}
-                  </div>
-                </div>
-                <div className="text-center">
-                  <div style={{ color: 'var(--pencil-lead)', opacity: 0.6, fontSize: '0.75rem', marginBottom: '4px' }}>Mode</div>
-                  <div style={{
-                    color: 'var(--architect-blue)',
-                    fontWeight: 600,
-                    textTransform: 'capitalize',
-                    fontSize: '0.875rem'
-                  }}>
-                    {drawMode}
-                  </div>
-                </div>
-                <div className="text-center">
-                  <div style={{ color: 'var(--pencil-lead)', opacity: 0.6, fontSize: '0.75rem', marginBottom: '4px' }}>Scale</div>
-                  <div style={{ color: 'var(--pencil-lead)', fontWeight: 600, fontSize: '0.875rem' }}>
-                    {scale.x}×{scale.y}
-                  </div>
-                </div>
+                {drawMode === 'function' ? (
+                  <FunctionInput
+                    onAddFunction={handleAddFunction}
+                    strokeColor={strokeColor}
+                    strokeWidth={strokeWidth}
+                  />
+                ) : (
+                  <CoordinateInput
+                    onAddLine={handleAddLineByCoordinates}
+                    onAddPoint={handleAddPointByCoordinates}
+                    currentPoint={currentPoint}
+                    selectedElement={selectedElement}
+                    selectedElementId={selectedElementId}
+                    selectedElements={currentSelection.elementIds.size > 0 ?
+                      Array.from(currentSelection.elementIds).map(id => ({
+                        id,
+                        element: elements[id]
+                      })).filter(item => item.element) : undefined
+                    }
+                    onTogglePointProjection={handleTogglePointProjection}
+                    showIntersections={showIntersections}
+                    onToggleIntersections={handleToggleIntersections}
+                    drawMode={drawMode}
+                    elementCount={elementCount}
+                  />
+                )}
               </div>
             </div>
-          </aside>
+
+            {/* Intersections Panel - below coordinates */}
+            {showIntersections && intersectionPoints.length > 0 && (
+              <div style={{
+                width: '100%',
+                maxWidth: '92%',
+                margin: '16px auto 0 auto'
+              }}>
+                <div className="control-panel rounded-lg p-4 sm:p-6">
+                  <h3 className="text-lg font-semibold mb-4" style={{ color: '#9B59B6' }}>
+                    Intersections ({intersectionPoints.length})
+                  </h3>
+                  <div className="max-h-96 overflow-y-auto space-y-3">
+                    {intersectionPoints.map((intersection, idx) => (
+                      <div key={idx} className="p-3 rounded-md" style={{
+                        background: 'rgba(155, 89, 182, 0.05)',
+                        border: '1px solid rgba(155, 89, 182, 0.3)'
+                      }}>
+                        <div className="flex justify-between items-start mb-2">
+                          <span className="text-xs font-semibold" style={{ color: '#9B59B6' }}>
+                            Point #{idx + 1}
+                          </span>
+                          <span className="text-xs" style={{
+                            color: 'var(--pencil-lead)',
+                            opacity: 0.6,
+                            fontFamily: 'JetBrains Mono, monospace'
+                          }}>
+                            El {intersection.elementId1} ∩ El {intersection.elementId2}
+                          </span>
+                        </div>
+                        <div className="px-3 py-2 rounded-md mb-2" style={{
+                          background: 'rgba(155, 89, 182, 0.1)',
+                          border: '1px solid rgba(155, 89, 182, 0.2)',
+                          fontFamily: 'JetBrains Mono, monospace',
+                          fontSize: '0.875rem',
+                          color: '#9B59B6',
+                          fontWeight: 600
+                        }}>
+                          ({intersection.point.x.toFixed(2)}, {intersection.point.y.toFixed(2)})
+                        </div>
+                        <button
+                          onClick={() => handleToggleIntersectionProjection(idx)}
+                          className="w-full px-3 py-2 rounded-md text-sm font-medium transition-all"
+                          style={{
+                            background: intersection.showProjection ? '#9B59B6' : 'transparent',
+                            color: intersection.showProjection ? 'white' : '#9B59B6',
+                            border: `1.5px solid #9B59B6`
+                          }}
+                        >
+                          {intersection.showProjection ? '✓ Hide' : '+ Show'} Projection
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </main>
         </div>
 
         {/* Footer */}
@@ -796,7 +899,7 @@ export default function Home() {
             fontFamily: 'JetBrains Mono, monospace'
           }}>
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ opacity: 0.7 }}>
-              <path d="M8 2L8 14M2 8L14 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+              <path d="M8 2L8 14M2 8L14 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
             </svg>
             <span>Touch-enabled • Responsive • Precise</span>
           </div>

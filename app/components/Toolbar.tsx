@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import { DrawMode } from './GraphCanvas';
 import { Slider } from './ui/slider';
 
@@ -23,22 +22,6 @@ export interface ToolbarProps {
   onCurveTypeChange: (type: 'quadratic' | 'cubic' | 's-curve') => void;
   drawMode: DrawMode;
   onDrawModeChange: (mode: DrawMode) => void;
-  onClear: () => void;
-  onUndo: () => void;
-  onRedo: () => void;
-  onExport: () => void;
-  onExportJPEG: (quality: number) => void;
-  onExportPDF: (pageSize: string, orientation: 'portrait' | 'landscape') => void;
-  onExportJSON: () => void;
-  onImportJSON: () => void;
-  onCopy: () => void;
-  onPaste: () => void;
-  onDelete: () => void;
-  hasSelection: boolean;
-  onGroup: () => void;
-  onUngroup: () => void;
-  canGroup: boolean;
-  canUngroup: boolean;
 }
 
 const PRESET_COLORS = [
@@ -65,77 +48,11 @@ export default function Toolbar({
   curveType,
   onCurveTypeChange,
   drawMode,
-  onDrawModeChange,
-  onClear,
-  onUndo,
-  onRedo,
-  onExport,
-  onExportJPEG,
-  onExportPDF,
-  onExportJSON,
-  onImportJSON,
-  onCopy,
-  onPaste,
-  onDelete,
-  hasSelection,
-  onGroup,
-  onUngroup,
-  canGroup,
-  canUngroup
+  onDrawModeChange
 }: ToolbarProps) {
-  const [exportFormat, setExportFormat] = useState<'png' | 'jpeg' | 'pdf'>('png');
-  const [jpegQuality, setJpegQuality] = useState(90);
-  const [pdfPageSize, setPdfPageSize] = useState<'letter' | 'a4' | 'a3'>('letter');
-  const [pdfOrientation, setPdfOrientation] = useState<'landscape' | 'portrait'>('landscape');
 
   return (
-    <div className="control-panel rounded-lg p-5">
-      <div className="space-y-5">
-        {/* Header */}
-        <h3 className="text-sm font-semibold" style={{
-          color: 'var(--architect-blue)',
-          fontFamily: 'JetBrains Mono, monospace',
-          letterSpacing: '0.05em',
-          textTransform: 'uppercase'
-        }}>
-          Drawing Tools
-        </h3>
-
-        {/* Grid Toggle */}
-        <div className="flex items-center justify-between">
-          <label className="text-sm font-medium" style={{ color: 'var(--pencil-lead)' }}>
-            Grid
-          </label>
-          <button
-            onClick={onToggleGrid}
-            className="px-4 py-2 rounded-md text-sm font-medium transition-all"
-            style={{
-              background: showGrid ? 'var(--architect-blue)' : 'var(--graph-lines)',
-              color: showGrid ? 'white' : 'var(--pencil-lead)',
-              border: showGrid ? 'none' : '1px solid var(--canvas-border)'
-            }}
-          >
-            {showGrid ? 'Visible' : 'Hidden'}
-          </button>
-        </div>
-
-        {/* Axis Units Toggle */}
-        <div className="flex items-center justify-between">
-          <label className="text-sm font-medium" style={{ color: 'var(--pencil-lead)' }}>
-            Axis Units
-          </label>
-          <button
-            onClick={onToggleAxisUnits}
-            className="px-4 py-2 rounded-md text-sm font-medium transition-all"
-            style={{
-              background: showAxisUnits ? 'var(--architect-blue)' : 'var(--graph-lines)',
-              color: showAxisUnits ? 'white' : 'var(--pencil-lead)',
-              border: showAxisUnits ? 'none' : '1px solid var(--canvas-border)'
-            }}
-          >
-            {showAxisUnits ? 'Visible' : 'Hidden'}
-          </button>
-        </div>
+    <div className="space-y-5">        
 
         {/* Draw Mode */}
         <div>
@@ -335,258 +252,42 @@ export default function Toolbar({
           </div>
         </div>
 
-        {/* Actions */}
-        <div className="pt-3 border-t space-y-3" style={{ borderColor: 'var(--graph-lines)' }}>
-          {/* Format Selection */}
-          <div>
-            <label className="block text-xs mb-1.5 font-medium" style={{ color: 'var(--graph-lines)' }}>
-              Export Format
-            </label>
-            <select
-              value={exportFormat}
-              onChange={(e) => setExportFormat(e.target.value as 'png' | 'jpeg' | 'pdf')}
-              className="w-full px-3 py-2 rounded-md text-sm"
-              style={{
-                background: 'var(--background)',
-                color: 'var(--foreground)',
-                border: '1px solid var(--graph-lines)'
-              }}
-            >
-              <option value="png">PNG</option>
-              <option value="jpeg">JPEG</option>
-              <option value="pdf">PDF</option>
-            </select>
-          </div>
-
-          {/* JPEG Quality Slider */}
-          {exportFormat === 'jpeg' && (
-            <div>
-              <label className="block text-xs mb-1.5 font-medium" style={{ color: 'var(--graph-lines)' }}>
-                Quality: {jpegQuality}%
-              </label>
-              <Slider
-                value={[jpegQuality]}
-                onValueChange={(value) => setJpegQuality(value[0])}
-                min={80}
-                max={100}
-                step={5}
-              />
-            </div>
-          )}
-
-          {/* PDF Settings */}
-          {exportFormat === 'pdf' && (
-            <>
-              <div>
-                <label className="block text-xs mb-1.5 font-medium" style={{ color: 'var(--graph-lines)' }}>
-                  Page Size
-                </label>
-                <select
-                  value={pdfPageSize}
-                  onChange={(e) => setPdfPageSize(e.target.value as 'letter' | 'a4' | 'a3')}
-                  className="w-full px-3 py-2 rounded-md text-sm"
-                  style={{
-                    background: 'var(--background)',
-                    color: 'var(--foreground)',
-                    border: '1px solid var(--graph-lines)'
-                  }}
-                >
-                  <option value="letter">Letter (8.5×11&quot;)</option>
-                  <option value="a4">A4 (210×297mm)</option>
-                  <option value="a3">A3 (297×420mm)</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs mb-1.5 font-medium" style={{ color: 'var(--graph-lines)' }}>
-                  Orientation
-                </label>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setPdfOrientation('landscape')}
-                    className="flex-1 px-3 py-2 rounded-md text-sm font-medium transition-all"
-                    style={{
-                      background: pdfOrientation === 'landscape' ? 'var(--architect-green)' : 'var(--background)',
-                      color: pdfOrientation === 'landscape' ? 'white' : 'var(--foreground)',
-                      border: `1px solid ${pdfOrientation === 'landscape' ? 'var(--architect-green)' : 'var(--graph-lines)'}`
-                    }}
-                  >
-                    Landscape
-                  </button>
-                  <button
-                    onClick={() => setPdfOrientation('portrait')}
-                    className="flex-1 px-3 py-2 rounded-md text-sm font-medium transition-all"
-                    style={{
-                      background: pdfOrientation === 'portrait' ? 'var(--architect-green)' : 'var(--background)',
-                      color: pdfOrientation === 'portrait' ? 'white' : 'var(--foreground)',
-                      border: `1px solid ${pdfOrientation === 'portrait' ? 'var(--architect-green)' : 'var(--graph-lines)'}`
-                    }}
-                  >
-                    Portrait
-                  </button>
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* Export Button */}
+        {/* Grid Toggle */}
+        <div className="flex items-center justify-between">
+          <label className="text-sm font-medium" style={{ color: 'var(--pencil-lead)' }}>
+            Grid
+          </label>
           <button
-            onClick={() => {
-              if (exportFormat === 'png') onExport();
-              else if (exportFormat === 'jpeg') onExportJPEG(jpegQuality / 100);
-              else if (exportFormat === 'pdf') onExportPDF(pdfPageSize, pdfOrientation);
-            }}
-            className="w-full px-4 py-2.5 rounded-md text-sm font-medium transition-all"
+            onClick={onToggleGrid}
+            className="px-4 py-2 rounded-md text-sm font-medium transition-all"
             style={{
-              background: 'var(--architect-green)',
-              color: 'white',
-              border: 'none'
+              background: showGrid ? 'var(--architect-blue)' : 'var(--graph-lines)',
+              color: showGrid ? 'white' : 'var(--pencil-lead)',
+              border: showGrid ? 'none' : '1px solid var(--canvas-border)'
             }}
           >
-            ↓ Export {exportFormat.toUpperCase()}
-          </button>
-          <button
-            onClick={onExportJSON}
-            className="w-full px-4 py-2.5 rounded-md text-sm font-medium transition-all"
-            style={{
-              background: 'var(--architect-blue)',
-              color: 'white',
-              border: 'none'
-            }}
-          >
-            ↓ Export JSON
-          </button>
-          <button
-            onClick={onImportJSON}
-            className="w-full px-4 py-2.5 rounded-md text-sm font-medium transition-all"
-            style={{
-              background: 'transparent',
-              color: 'var(--architect-blue)',
-              border: '1.5px solid var(--architect-blue)'
-            }}
-          >
-            ↑ Import JSON
-          </button>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              onClick={onUndo}
-              className="px-4 py-2.5 rounded-md text-sm font-medium transition-all"
-              style={{
-                background: 'transparent',
-                color: 'var(--architect-blue)',
-                border: '1.5px solid var(--canvas-border)'
-              }}
-            >
-              ↺ Undo
-            </button>
-            <button
-              onClick={onRedo}
-              className="px-4 py-2.5 rounded-md text-sm font-medium transition-all"
-              style={{
-                background: 'transparent',
-                color: 'var(--architect-blue)',
-                border: '1.5px solid var(--canvas-border)'
-              }}
-            >
-              ↻ Redo
-            </button>
-          </div>
-
-          {/* Selection Actions */}
-          <div className="pt-3 border-t space-y-3" style={{ borderColor: 'var(--canvas-border)' }}>
-            <h4 className="text-xs font-semibold" style={{ color: 'var(--architect-blue)' }}>
-              Selection Actions
-            </h4>
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                onClick={onCopy}
-                disabled={!hasSelection}
-                className="px-3 py-2 rounded-md text-sm font-medium transition-all"
-                style={{
-                  background: hasSelection ? 'var(--architect-blue)' : 'var(--graph-lines)',
-                  color: hasSelection ? 'white' : 'var(--pencil-lead)',
-                  opacity: hasSelection ? 1 : 0.5,
-                  cursor: hasSelection ? 'pointer' : 'not-allowed',
-                  border: '1.5px solid var(--canvas-border)'
-                }}
-                title="Copy (Ctrl+C)"
-              >
-                Copy
-              </button>
-              <button
-                onClick={onPaste}
-                className="px-3 py-2 rounded-md text-sm font-medium transition-all"
-                style={{
-                  background: 'var(--architect-blue)',
-                  color: 'white',
-                  border: '1.5px solid var(--canvas-border)'
-                }}
-                title="Paste (Ctrl+V)"
-              >
-                Paste
-              </button>
-              <button
-                onClick={onDelete}
-                disabled={!hasSelection}
-                className="px-3 py-2 rounded-md text-sm font-medium transition-all"
-                style={{
-                  background: hasSelection ? 'var(--architect-red)' : 'var(--graph-lines)',
-                  color: hasSelection ? 'white' : 'var(--pencil-lead)',
-                  opacity: hasSelection ? 1 : 0.5,
-                  cursor: hasSelection ? 'pointer' : 'not-allowed',
-                  border: '1.5px solid var(--canvas-border)'
-                }}
-                title="Delete (Del/Backspace)"
-              >
-                Delete
-              </button>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={onGroup}
-                disabled={!canGroup}
-                className="px-3 py-2 rounded-md text-sm font-medium transition-all"
-                style={{
-                  background: canGroup ? 'var(--architect-blue)' : 'var(--graph-lines)',
-                  color: canGroup ? 'white' : 'var(--pencil-lead)',
-                  opacity: canGroup ? 1 : 0.5,
-                  cursor: canGroup ? 'pointer' : 'not-allowed',
-                  border: '1.5px solid var(--canvas-border)'
-                }}
-                title="Group selected elements"
-              >
-                Group
-              </button>
-              <button
-                onClick={onUngroup}
-                disabled={!canUngroup}
-                className="px-3 py-2 rounded-md text-sm font-medium transition-all"
-                style={{
-                  background: canUngroup ? 'var(--architect-blue)' : 'var(--graph-lines)',
-                  color: canUngroup ? 'white' : 'var(--pencil-lead)',
-                  opacity: canUngroup ? 1 : 0.5,
-                  cursor: canUngroup ? 'pointer' : 'not-allowed',
-                  border: '1.5px solid var(--canvas-border)'
-                }}
-                title="Ungroup selected elements"
-              >
-                Ungroup
-              </button>
-            </div>
-          </div>
-
-          <button
-            onClick={onClear}
-            className="w-full px-4 py-2.5 rounded-md text-sm font-medium transition-all"
-            style={{
-              background: 'rgba(231, 76, 60, 0.1)',
-              color: 'var(--architect-red)',
-              border: '1.5px solid var(--architect-red)'
-            }}
-          >
-            ✕ Clear All
+            {showGrid ? 'Visible' : 'Hidden'}
           </button>
         </div>
-      </div>
+
+        {/* Axis Units Toggle */}
+        <div className="flex items-center justify-between">
+          <label className="text-sm font-medium" style={{ color: 'var(--pencil-lead)' }}>
+            Axis Units
+          </label>
+          <button
+            onClick={onToggleAxisUnits}
+            className="px-4 py-2 rounded-md text-sm font-medium transition-all"
+            style={{
+              background: showAxisUnits ? 'var(--architect-blue)' : 'var(--graph-lines)',
+              color: showAxisUnits ? 'white' : 'var(--pencil-lead)',
+              border: showAxisUnits ? 'none' : '1px solid var(--canvas-border)'
+            }}
+          >
+            {showAxisUnits ? 'Visible' : 'Hidden'}
+          </button>
+        </div>
+
     </div>
   );
 }

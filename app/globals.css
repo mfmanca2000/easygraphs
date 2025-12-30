@@ -261,4 +261,45 @@
       0 10px 15px -3px var(--subtle-shadow),
       0 4px 6px -2px var(--subtle-shadow);
   }
+
+  /* Sidebar transitions */
+  .sidebar-container {
+    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    overflow-x: hidden;
+  }
+
+  /* Collapsible panel animation */
+  .collapsible-content {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease-in-out;
+  }
+
+  .collapsible-content.expanded {
+    max-height: 5000px;
+  }
+
+  /* Mobile drawer */
+  .mobile-drawer-backdrop {
+    background: rgba(0, 0, 0, 0.5);
+    transition: opacity 0.3s ease-in-out;
+  }
+
+  .mobile-drawer {
+    transform: translateX(-100%);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .mobile-drawer.open {
+    transform: translateX(0);
+  }
+
+  /* Chevron rotation */
+  .chevron-icon {
+    transition: transform 0.2s ease-in-out;
+  }
+
+  .chevron-icon.rotated {
+    transform: rotate(180deg);
+  }
 }

@@ -63,16 +63,7 @@ export default function CoordinateInput({ onAddLine, onAddPoint, currentPoint, s
   };
 
   return (
-    <div className="control-panel rounded-lg p-5">
-      <h3 className="text-sm font-semibold mb-4" style={{
-        color: 'var(--architect-blue)',
-        fontFamily: 'JetBrains Mono, monospace',
-        letterSpacing: '0.05em',
-        textTransform: 'uppercase'
-      }}>
-        Coordinates
-      </h3>
-
+    <div>
       {/* Line Tool Form */}
       {drawMode === 'line' && (
         <form onSubmit={handleLineSubmit} className="space-y-4">
