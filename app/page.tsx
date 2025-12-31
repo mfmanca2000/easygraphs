@@ -3,7 +3,9 @@
 import { useState, useRef, useEffect } from 'react';
 import { flushSync } from 'react-dom';
 import { HelpCircle, Menu } from 'lucide-react';
-import GraphCanvas, { DrawMode, Point, GraphCanvasHandle, GraphElement, EasyGraphsExport, GraphLabels, DEFAULT_LABELS, IntersectionPoint } from './components/GraphCanvas';
+import GraphCanvas from './components/GraphCanvas';
+import type { DrawMode, Point, GraphCanvasHandle, GraphElement, EasyGraphsExport, GraphLabels, IntersectionPoint } from '@/app/types/canvas';
+import { DEFAULT_LABELS } from '@/app/types/canvas';
 import Toolbar from './components/Toolbar';
 import ScaleControls from './components/ScaleControls';
 import CoordinateInput from './components/CoordinateInput';

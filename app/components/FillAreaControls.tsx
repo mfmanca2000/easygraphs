@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { GraphElement } from './GraphCanvas';
+import type { GraphElement } from '@/app/types/canvas';
 
 export interface FillAreaControlsProps {
   elementCount: number;

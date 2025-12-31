@@ -1,6 +1,6 @@
 'use client';
 
-import { DrawMode } from './GraphCanvas';
+import type { DrawMode } from '@/app/types/canvas';
 import { Slider } from './ui/slider';
 
 export interface ToolbarProps {
