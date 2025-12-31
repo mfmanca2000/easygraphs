@@ -30,6 +30,11 @@
     box-sizing: border-box;
   }
 
+  html {
+    overflow-x: hidden;
+    width: 100%;
+  }
+
   body {
     background: var(--graph-paper) !important;
     color: var(--pencil-lead) !important;
@@ -38,6 +43,7 @@
     -moz-osx-font-smoothing: grayscale;
     position: relative;
     overflow-x: hidden;
+    width: 100%;
   }
 
   /* Graph paper background effect */
