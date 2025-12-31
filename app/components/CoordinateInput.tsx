@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Point, GraphElement, DrawMode } from './GraphCanvas';
+import type { Point, GraphElement, DrawMode } from '@/app/types/canvas';
 
 export interface CoordinateInputProps {
   onAddLine: (start: Point, end: Point) => void;

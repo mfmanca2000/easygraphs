@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Trash2 } from 'lucide-react';
-import type { GraphLabels, GraphElement, ElementLabel, TextBox } from './GraphCanvas';
+import type { GraphLabels, GraphElement, ElementLabel, TextBox } from '@/app/types/canvas';
 import { Slider } from './ui/slider';
 
 interface LabelControlsProps {
