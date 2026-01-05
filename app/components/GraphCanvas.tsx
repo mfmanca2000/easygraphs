@@ -26,6 +26,7 @@ import {
   canvasToGraph as canvasToGraphUtil,
   graphToCanvas as graphToCanvasUtil,
   calculateTitleOffset as calculateTitleOffsetUtil,
+  calculateDefaultPanOffset as calculateDefaultPanOffsetUtil,
   isClickNearAxis as isClickNearAxisUtil,
   isElementInSelectionBox as isElementInSelectionBoxUtil,
   isTextBoxInSelectionBox as isTextBoxInSelectionBoxUtil,
@@ -1211,6 +1212,21 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
   useEffect(() => {
     render();
   }, [render]);
+
+  // Initialize default pan offset on mount to focus on first quadrant
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const titleOffset = getTitleOffset();
+    const defaultPanOffset = calculateDefaultPanOffsetUtil(
+      canvas.width,
+      canvas.height,
+      scale,
+      titleOffset
+    );
+    setPanOffset(defaultPanOffset);
+  }, []); // Empty dependency array - run only on mount
 
   // Clear selection when switching away from select/textbox modes
   useEffect(() => {
@@ -3403,8 +3419,20 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     groupSelection: handleGroup,
     ungroupSelection: handleUngroup,
     getGroups: () => groups,
-    resetPanOffset: () => setPanOffset({ x: 0, y: 0 })
-  }), [addLineByCoordinates, addPointByCoordinates, addFillArea, addFunction, clearCanvas, undo, redo, elements, exportToPNG, exportToJPEG, exportToPDF, getSelectedElement, getSelectedElementId, updateSelectedElement, addModifyAction, getExportData, importData, togglePointProjection, calculateAllIntersections, getLabels, updateLabels, addTextBox, deleteTextBox, selectTextBox, handleCopy, handlePaste, handleDelete, selection, handleGroup, handleUngroup, groups]);
+    resetPanOffset: () => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+
+      const titleOffset = getTitleOffset();
+      const defaultPanOffset = calculateDefaultPanOffsetUtil(
+        canvas.width,
+        canvas.height,
+        scale,
+        titleOffset
+      );
+      setPanOffset(defaultPanOffset);
+    }
+  }), [addLineByCoordinates, addPointByCoordinates, addFillArea, addFunction, clearCanvas, undo, redo, elements, exportToPNG, exportToJPEG, exportToPDF, getSelectedElement, getSelectedElementId, updateSelectedElement, addModifyAction, getExportData, importData, togglePointProjection, calculateAllIntersections, getLabels, updateLabels, addTextBox, deleteTextBox, selectTextBox, handleCopy, handlePaste, handleDelete, selection, handleGroup, handleUngroup, groups, scale, getTitleOffset]);
 
   return (
     <canvas

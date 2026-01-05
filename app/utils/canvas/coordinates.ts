@@ -57,6 +57,40 @@ export function calculateTitleOffset(
 }
 
 /**
+ * Calculate default pan offset to position bottom-left corner at specified graph coordinates
+ * Default position: bottom-left corner at (-2.1, -2.1) for first quadrant focus
+ */
+export function calculateDefaultPanOffset(
+  canvasWidth: number,
+  canvasHeight: number,
+  scale: { x: number; y: number },
+  titleOffset: number,
+  bottomLeftX: number = -1.5,
+  bottomLeftY: number = -1.5
+): Point {
+  // For bottom-left corner of canvas:
+  // canvasX = 0, canvasY = canvasHeight
+  // We want: graphX = bottomLeftX, graphY = bottomLeftY
+
+  // From canvasToGraph equations:
+  // graphX = (canvasX - centerX) / scale.x
+  // graphY = (centerY - canvasY) / scale.y
+
+  // Substituting bottom-left corner values:
+  // bottomLeftX = (0 - centerX) / scale.x  →  centerX = -bottomLeftX * scale.x
+  // bottomLeftY = (centerY - canvasHeight) / scale.y  →  centerY = bottomLeftY * scale.y + canvasHeight
+
+  // Since centerX = canvasWidth/2 + panOffset.x and centerY = (canvasHeight + titleOffset)/2 + panOffset.y:
+  // panOffset.x = -bottomLeftX * scale.x - canvasWidth/2
+  // panOffset.y = bottomLeftY * scale.y + canvasHeight - (canvasHeight + titleOffset)/2
+
+  return {
+    x: -bottomLeftX * scale.x - canvasWidth / 2,
+    y: bottomLeftY * scale.y + canvasHeight / 2 - titleOffset / 2
+  };
+}
+
+/**
  * Check if a click is near the axis (for panning trigger)
  */
 export function isClickNearAxis(
