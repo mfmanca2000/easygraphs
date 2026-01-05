@@ -523,7 +523,7 @@ export default function CoordinateInput({ onAddLine, onAddPoint, currentPoint, s
       )}
 
       {/* Current Point Display */}
-      {!selectedElement && currentPoint && (
+      {/* {!selectedElement && currentPoint && (
         <div className="mt-4 pt-4 border-t" style={{ borderColor: 'var(--graph-lines)' }}>
           <p className="text-xs font-medium mb-2" style={{ color: 'var(--pencil-lead)', opacity: 0.7 }}>
             Last Clicked:
@@ -539,7 +539,7 @@ export default function CoordinateInput({ onAddLine, onAddPoint, currentPoint, s
             ({currentPoint.x.toFixed(2)}, {currentPoint.y.toFixed(2)})
           </div>
         </div>
-      )}
+      )} */}
     </div>
   );
 }
