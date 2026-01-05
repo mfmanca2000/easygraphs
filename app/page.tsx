@@ -29,6 +29,7 @@ export default function Home() {
   const [lineStyle, setLineStyle] = useState<'solid' | 'dashed' | 'dotted'>('solid');
   const [opacity, setOpacity] = useState(1);
   const [arrowType, setArrowType] = useState<'none' | 'end' | 'start' | 'both'>('none');
+  const [arrowSize, setArrowSize] = useState(15);
   const [curveType, setCurveType] = useState<'quadratic' | 'cubic' | 's-curve'>('quadratic');
   const [drawMode, setDrawMode] = useState<DrawMode>('line');
   const [scale, setScale] = useState({ x: 40, y: 40 });
@@ -53,13 +54,18 @@ export default function Home() {
   const [intersectionPoints, setIntersectionPoints] = useState<IntersectionPoint[]>([]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+  const [intersectionContextMenu, setIntersectionContextMenu] = useState<{
+    intersectionIndex: number;
+    x: number;
+    y: number;
+  } | null>(null);
 
-  // Recalculate intersections when elements change and intersection mode is on
+  // Recalculate intersections when elements change (always calculate, even if not shown)
   useEffect(() => {
-    if (showIntersections && canvasRef.current) {
+    if (canvasRef.current && elements.length > 1) {
       const newIntersections = canvasRef.current.calculateAllIntersections();
 
-      // Preserve showProjection state from existing intersections
+      // Preserve showProjection and visible state from existing intersections
       // Match intersections by their element pair (elementId1 and elementId2)
       setIntersectionPoints(prev => {
         const updatedIntersections = newIntersections.map(newInt => {
@@ -70,13 +76,17 @@ export default function Home() {
           );
           return {
             ...newInt,
-            showProjection: existing?.showProjection ?? false
+            showProjection: existing?.showProjection ?? false,
+            visible: existing?.visible ?? true  // Default to visible for new intersections
           };
         });
         return updatedIntersections;
       });
+    } else if (elements.length <= 1) {
+      // Clear intersections if there aren't enough elements
+      setIntersectionPoints([]);
     }
-  }, [elements, showIntersections]);
+  }, [elements]);
 
   // Responsive canvas sizing - measure the actual container
   useEffect(() => {
@@ -124,6 +134,7 @@ export default function Home() {
       setLineStyle(selectedElement.lineStyle || 'solid');
       setOpacity(selectedElement.opacity ?? 1);
       setArrowType(selectedElement.arrowType || 'none');
+      setArrowSize(selectedElement.arrowSize ?? Math.max(5, Math.min(40, selectedElement.lineWidth * 0.75)));
       // Save original state when a new element is selected
       originalElementRef.current = { ...selectedElement };
 
@@ -151,15 +162,16 @@ export default function Home() {
         selectedElement.lineWidth !== strokeWidth ||
         selectedElement.lineStyle !== lineStyle ||
         selectedElement.opacity !== opacity ||
-        selectedElement.arrowType !== arrowType) {
+        selectedElement.arrowType !== arrowType ||
+        selectedElement.arrowSize !== arrowSize) {
         // Apply change without adding to history
-        canvasRef.current.updateSelectedElement(strokeColor, strokeWidth, false, undefined, lineStyle, opacity, arrowType);
+        canvasRef.current.updateSelectedElement(strokeColor, strokeWidth, false, undefined, lineStyle, opacity, arrowType, arrowSize);
       }
     }
 
     // Note: selectedElement is intentionally excluded to avoid extra re-renders when the element updates
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [strokeColor, strokeWidth, lineStyle, opacity, arrowType, selectedElementId]);
+  }, [strokeColor, strokeWidth, lineStyle, opacity, arrowType, arrowSize, selectedElementId]);
 
   // When selection changes, finalize any edits by adding a single entry to history
   const prevSelectedIdRef = useRef<number | null>(null);
@@ -177,13 +189,21 @@ export default function Home() {
           currentState.lineWidth !== originalElementRef.current.lineWidth ||
           currentState.lineStyle !== originalElementRef.current.lineStyle ||
           currentState.opacity !== originalElementRef.current.opacity ||
-          currentState.arrowType !== originalElementRef.current.arrowType) {
+          currentState.arrowType !== originalElementRef.current.arrowType ||
+          currentState.arrowSize !== originalElementRef.current.arrowSize) {
           // Add a single modify action for all the changes made to the previous element
           canvasRef.current.addModifyAction(prevId, originalElementRef.current);
         }
       }
     }
   }, [selectedElementId]);
+
+  // Auto-update arrowSize when strokeWidth changes (only when no element is selected)
+  useEffect(() => {
+    if (selectedElementId === null) {
+      setArrowSize(Math.max(5, Math.min(40, strokeWidth * 0.75)));
+    }
+  }, [strokeWidth, selectedElementId]);
 
   const handleClear = () => {
     if (canvasRef.current) {
@@ -488,6 +508,33 @@ export default function Home() {
     });
   };
 
+  const handleToggleIntersectionVisibility = (intersectionIndex: number) => {
+    setIntersectionPoints(prev => {
+      const newIntersections = [...prev];
+      newIntersections[intersectionIndex] = {
+        ...newIntersections[intersectionIndex],
+        visible: !newIntersections[intersectionIndex].visible
+      };
+      return newIntersections;
+    });
+  };
+
+  const handleShowAllIntersections = () => {
+    setIntersectionPoints(prev => prev.map(int => ({ ...int, visible: true })));
+  };
+
+  const handleHideAllIntersections = () => {
+    setIntersectionPoints(prev => prev.map(int => ({ ...int, visible: false })));
+  };
+
+  const handleIntersectionContextMenu = (intersectionIndex: number, x: number, y: number) => {
+    setIntersectionContextMenu({ intersectionIndex, x, y });
+  };
+
+  const handleCloseIntersectionContextMenu = () => {
+    setIntersectionContextMenu(null);
+  };
+
   const handleLabelsChange = (newLabels: GraphLabels, addToHistory: boolean = false) => {
     setLabels(newLabels);
     if (canvasRef.current) {
@@ -592,6 +639,8 @@ export default function Home() {
               onOpacityChange={setOpacity}
               arrowType={arrowType}
               onArrowTypeChange={setArrowType}
+              arrowSize={arrowSize}
+              onArrowSizeChange={setArrowSize}
               curveType={curveType}
               onCurveTypeChange={setCurveType}
               drawMode={drawMode}
@@ -679,6 +728,8 @@ export default function Home() {
                 onOpacityChange={setOpacity}
                 arrowType={arrowType}
                 onArrowTypeChange={setArrowType}
+                arrowSize={arrowSize}
+                onArrowSizeChange={setArrowSize}
                 curveType={curveType}
                 onCurveTypeChange={setCurveType}
                 drawMode={drawMode}
@@ -799,6 +850,7 @@ export default function Home() {
                   lineStyle={lineStyle}
                   opacity={opacity}
                   arrowType={arrowType}
+                  arrowSize={arrowSize}
                   curveType={curveType}
                   drawMode={drawMode}
                   scale={scale}
@@ -809,6 +861,7 @@ export default function Home() {
                   onElementsChange={handleElementsChange}
                   onScaleChange={setScale}
                   onLabelsChange={handleCanvasLabelsChange}
+                  onIntersectionContextMenu={handleIntersectionContextMenu}
                 />
               </div>
             </div>
@@ -860,19 +913,57 @@ export default function Home() {
                 margin: '16px auto 0 auto'
               }}>
                 <div className="control-panel rounded-lg p-4 sm:p-6">
-                  <h3 className="text-lg font-semibold mb-4" style={{ color: '#9B59B6' }}>
-                    Intersections ({intersectionPoints.length})
-                  </h3>
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-semibold" style={{ color: '#9B59B6' }}>
+                      Intersections ({intersectionPoints.filter(i => i.visible !== false).length}/{intersectionPoints.length})
+                    </h3>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleShowAllIntersections}
+                        className="px-3 py-1.5 rounded-md text-xs font-medium transition-all"
+                        style={{
+                          background: 'transparent',
+                          color: '#9B59B6',
+                          border: '1px solid #9B59B6'
+                        }}
+                      >
+                        Show All
+                      </button>
+                      <button
+                        onClick={handleHideAllIntersections}
+                        className="px-3 py-1.5 rounded-md text-xs font-medium transition-all"
+                        style={{
+                          background: 'transparent',
+                          color: '#9B59B6',
+                          border: '1px solid #9B59B6'
+                        }}
+                      >
+                        Hide All
+                      </button>
+                    </div>
+                  </div>
                   <div className="max-h-96 overflow-y-auto space-y-3">
                     {intersectionPoints.map((intersection, idx) => (
                       <div key={idx} className="p-3 rounded-md" style={{
                         background: 'rgba(155, 89, 182, 0.05)',
-                        border: '1px solid rgba(155, 89, 182, 0.3)'
+                        border: '1px solid rgba(155, 89, 182, 0.3)',
+                        opacity: intersection.visible === false ? 0.5 : 1
                       }}>
                         <div className="flex justify-between items-start mb-2">
-                          <span className="text-xs font-semibold" style={{ color: '#9B59B6' }}>
-                            Point #{idx + 1}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={intersection.visible !== false}
+                              onChange={() => handleToggleIntersectionVisibility(idx)}
+                              className="w-4 h-4 cursor-pointer"
+                              style={{
+                                accentColor: '#9B59B6'
+                              }}
+                            />
+                            <span className="text-xs font-semibold" style={{ color: '#9B59B6' }}>
+                              Point #{idx + 1}
+                            </span>
+                          </div>
                           <span className="text-xs" style={{
                             color: 'var(--pencil-lead)',
                             opacity: 0.6,
@@ -927,6 +1018,84 @@ export default function Home() {
           </div>
         </footer>
       </div>
+
+      {/* Intersection Context Menu */}
+      {intersectionContextMenu && (
+        <>
+          <div
+            className="fixed inset-0 z-40"
+            onClick={handleCloseIntersectionContextMenu}
+          />
+          <div
+            className="fixed z-50 rounded-lg shadow-lg py-2"
+            style={{
+              left: `${intersectionContextMenu.x}px`,
+              top: `${intersectionContextMenu.y}px`,
+              background: '#FFFFFF',
+              border: '2px solid #9B59B6',
+              minWidth: '180px'
+            }}
+          >
+            <button
+              onClick={() => {
+                const intersection = intersectionPoints[intersectionContextMenu.intersectionIndex];
+
+                if (!showIntersections) {
+                  // If Show Intersections is off, hide all points except this one, then enable
+                  setIntersectionPoints(prev => prev.map((int, idx) => ({
+                    ...int,
+                    visible: idx === intersectionContextMenu.intersectionIndex ? true : false
+                  })));
+                  setShowIntersections(true);
+                } else if (intersection?.visible === false) {
+                  // If Show Intersections is on but this point is hidden, just show it
+                  handleToggleIntersectionVisibility(intersectionContextMenu.intersectionIndex);
+                } else {
+                  // Otherwise hide this point
+                  handleToggleIntersectionVisibility(intersectionContextMenu.intersectionIndex);
+                }
+                handleCloseIntersectionContextMenu();
+              }}
+              className="w-full px-4 py-2 text-left text-sm font-medium transition-all hover:bg-opacity-10"
+              style={{
+                color: '#9B59B6',
+                background: 'transparent'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(155, 89, 182, 0.1)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'transparent';
+              }}
+            >
+              {showIntersections && intersectionPoints[intersectionContextMenu.intersectionIndex]?.visible !== false ? '✓ Hide Point' : '+ Show Point'}
+            </button>
+            <button
+              onClick={() => {
+                // If Show Intersections is off, turn it on when showing projection
+                if (!showIntersections) {
+                  setShowIntersections(true);
+                }
+                handleToggleIntersectionProjection(intersectionContextMenu.intersectionIndex);
+                handleCloseIntersectionContextMenu();
+              }}
+              className="w-full px-4 py-2 text-left text-sm font-medium transition-all hover:bg-opacity-10"
+              style={{
+                color: '#9B59B6',
+                background: 'transparent'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(155, 89, 182, 0.1)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'transparent';
+              }}
+            >
+              {showIntersections && intersectionPoints[intersectionContextMenu.intersectionIndex]?.showProjection ? '✓ Hide Projection' : '+ Show Projection'}
+            </button>
+          </div>
+        </>
+      )}
 
       {/* Character Palette Modal */}
       <CharacterPalette

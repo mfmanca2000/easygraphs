@@ -18,6 +18,7 @@ export interface GraphElement {
   lineStyle?: LineStyle;  // Line style - default: 'solid'
   opacity?: number;  // Opacity 0-1 - default: 1
   arrowType?: ArrowType;  // Arrow endpoints - default: 'none'
+  arrowSize?: number;  // Arrow size in pixels (5-40) - default: lineWidth * 0.75
 }
 
 export interface FillArea {
@@ -32,4 +33,5 @@ export interface IntersectionPoint {
   elementId1: number;  // First element in the intersection
   elementId2: number;  // Second element in the intersection
   showProjection?: boolean;  // Whether to show projection for this intersection
+  visible?: boolean;  // Whether this intersection is visible - default: true
 }

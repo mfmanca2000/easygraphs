@@ -34,7 +34,7 @@ export function drawLineElement(
 
   // Draw arrows if configured
   const arrowType = element.arrowType || 'none';
-  const arrowSize = Math.max(3, Math.min(20, element.lineWidth * 0.75));
+  const arrowSize = element.arrowSize ?? Math.max(5, Math.min(40, element.lineWidth * 0.75));
 
   if (arrowType === 'end' || arrowType === 'both') {
     drawArrow(ctx, start.x, start.y, end.x, end.y, arrowSize, element.color, element.opacity ?? 1);
@@ -106,7 +106,7 @@ export function drawBezierElement(
 
   // Draw arrows if configured
   const arrowType = element.arrowType || 'none';
-  const arrowSize = Math.max(3, Math.min(20, element.lineWidth * 0.75));
+  const arrowSize = element.arrowSize ?? Math.max(5, Math.min(40, element.lineWidth * 0.75));
 
   if (arrowType === 'end' || arrowType === 'both') {
     // Arrow at end: use tangent from control point to end point
@@ -260,7 +260,7 @@ export function drawFreehandElement(
 
   // Draw arrows if configured
   const arrowType = element.arrowType || 'none';
-  const arrowSize = Math.max(3, Math.min(20, element.lineWidth * 0.75));
+  const arrowSize = element.arrowSize ?? Math.max(5, Math.min(40, element.lineWidth * 0.75));
 
   if (canvasPoints.length >= 2) {
     if (arrowType === 'end' || arrowType === 'both') {

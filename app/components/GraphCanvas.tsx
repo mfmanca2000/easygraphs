@@ -67,6 +67,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     lineStyle,
     opacity,
     arrowType,
+    arrowSize,
     curveType,
     drawMode,
     scale,
@@ -76,7 +77,8 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     onSelectionChange,
     onElementsChange,
     onScaleChange,
-    onLabelsChange    
+    onLabelsChange,
+    onIntersectionContextMenu
   } = props;
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -912,14 +914,14 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
             const canvasPoint = graphToCanvas(point.x, point.y);
 
             // Outer glow
-            ctx.fillStyle = 'rgba(230, 126, 34, 0.3)';
+            ctx.fillStyle = 'rgba(230, 126, 34, 0.15)';
             ctx.beginPath();
             ctx.arc(canvasPoint.x, canvasPoint.y, 14, 0, Math.PI * 2);
             ctx.fill();
 
-            // Main circle
-            ctx.fillStyle = '#E67E22';
-            ctx.strokeStyle = '#FFFFFF';
+            // Main circle - transparent fill with visible stroke
+            ctx.fillStyle = 'rgba(230, 126, 34, 0.2)';
+            ctx.strokeStyle = '#E67E22';
             ctx.lineWidth = 3;
             ctx.beginPath();
             ctx.arc(canvasPoint.x, canvasPoint.y, 10, 0, Math.PI * 2);
@@ -932,14 +934,14 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
             const canvasPoint = graphToCanvas(point.x, point.y);
 
             // Outer glow
-            ctx.fillStyle = 'rgba(230, 126, 34, 0.3)';
+            ctx.fillStyle = 'rgba(230, 126, 34, 0.15)';
             ctx.beginPath();
             ctx.arc(canvasPoint.x, canvasPoint.y, 14, 0, Math.PI * 2);
             ctx.fill();
 
-            // Main circle
-            ctx.fillStyle = '#E67E22';
-            ctx.strokeStyle = '#FFFFFF';
+            // Main circle - transparent fill with visible stroke
+            ctx.fillStyle = 'rgba(230, 126, 34, 0.2)';
+            ctx.strokeStyle = '#E67E22';
             ctx.lineWidth = 3;
             ctx.beginPath();
             ctx.arc(canvasPoint.x, canvasPoint.y, 10, 0, Math.PI * 2);
@@ -1011,14 +1013,14 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
               const canvasPoint = graphToCanvas(point.x, point.y);
 
               // Outer glow
-              ctx.fillStyle = 'rgba(230, 126, 34, 0.3)';
+              ctx.fillStyle = 'rgba(230, 126, 34, 0.15)';
               ctx.beginPath();
               ctx.arc(canvasPoint.x, canvasPoint.y, 12, 0, Math.PI * 2);
               ctx.fill();
 
-              // Main circle
-              ctx.fillStyle = '#E67E22';
-              ctx.strokeStyle = '#FFFFFF';
+              // Main circle - transparent fill with visible stroke
+              ctx.fillStyle = 'rgba(230, 126, 34, 0.2)';
+              ctx.strokeStyle = '#E67E22';
               ctx.lineWidth = 3;
               ctx.beginPath();
               ctx.arc(canvasPoint.x, canvasPoint.y, 8, 0, Math.PI * 2);
@@ -1035,14 +1037,14 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
                 const canvasPoint = graphToCanvas(point.x, point.y);
 
                 // Outer glow
-                ctx.fillStyle = 'rgba(230, 126, 34, 0.3)';
+                ctx.fillStyle = 'rgba(230, 126, 34, 0.15)';
                 ctx.beginPath();
                 ctx.arc(canvasPoint.x, canvasPoint.y, 12, 0, Math.PI * 2);
                 ctx.fill();
 
-                // Main circle
-                ctx.fillStyle = '#E67E22';
-                ctx.strokeStyle = '#FFFFFF';
+                // Main circle - transparent fill with visible stroke
+                ctx.fillStyle = 'rgba(230, 126, 34, 0.2)';
+                ctx.strokeStyle = '#E67E22';
                 ctx.lineWidth = 3;
                 ctx.beginPath();
                 ctx.arc(canvasPoint.x, canvasPoint.y, 8, 0, Math.PI * 2);
@@ -1149,6 +1151,9 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     // Draw global intersection markers if enabled
     if (showIntersections && intersectionPoints.length > 0) {
       intersectionPoints.forEach((intersection) => {
+        // Skip if this intersection is hidden
+        if (intersection.visible === false) return;
+
         const intersectionCanvas = graphToCanvas(intersection.point.x, intersection.point.y);
 
         // Draw intersection marker (small circle with different color)
@@ -1496,6 +1501,95 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     return null;
   };
 
+  // Helper function to find if a click is near an intersection point
+  const findClickedIntersection = (canvasX: number, canvasY: number): number | null => {
+    if (!intersectionPoints || intersectionPoints.length === 0) {
+      return null;
+    }
+
+    const threshold = 10; // pixels
+
+    for (let i = 0; i < intersectionPoints.length; i++) {
+      const intersection = intersectionPoints[i];
+      const { x: intCanvasX, y: intCanvasY } = graphToCanvas(intersection.point.x, intersection.point.y);
+
+      const distance = Math.sqrt(
+        Math.pow(canvasX - intCanvasX, 2) + Math.pow(canvasY - intCanvasY, 2)
+      );
+
+      if (distance <= threshold) {
+        return i;
+      }
+    }
+
+    return null;
+  };
+
+  // Handle right-click on canvas (for context menu on intersections)
+  const handleContextMenu = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+
+    const { x: canvasX, y: canvasY } = getCanvasCoordinates(e);
+    const intersectionIndex = findClickedIntersection(canvasX, canvasY);
+
+    if (intersectionIndex !== null && onIntersectionContextMenu) {
+      // Get the absolute position for the context menu
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (rect) {
+        onIntersectionContextMenu(intersectionIndex, e.clientX, e.clientY);
+      }
+    }
+  };
+
+  // Long press detection for mobile
+  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const longPressPositionRef = useRef<{ x: number; y: number } | null>(null);
+
+  const handleTouchStartForLongPress = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    const touch = e.touches[0];
+    const { x: canvasX, y: canvasY } = getCanvasCoordinates(e);
+
+    longPressPositionRef.current = { x: canvasX, y: canvasY };
+
+    longPressTimerRef.current = setTimeout(() => {
+      if (longPressPositionRef.current && onIntersectionContextMenu) {
+        const intersectionIndex = findClickedIntersection(
+          longPressPositionRef.current.x,
+          longPressPositionRef.current.y
+        );
+
+        if (intersectionIndex !== null) {
+          const rect = canvasRef.current?.getBoundingClientRect();
+          if (rect) {
+            onIntersectionContextMenu(
+              intersectionIndex,
+              touch.clientX,
+              touch.clientY
+            );
+          }
+        }
+      }
+    }, 500); // 500ms for long press
+  };
+
+  const handleTouchMoveForLongPress = () => {
+    // Cancel long press if finger moves
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    longPressPositionRef.current = null;
+  };
+
+  const handleTouchEndForLongPress = () => {
+    // Clear long press timer
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    longPressPositionRef.current = null;
+  };
+
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
     // Ignore clicks when panning or just after panning
     if (isPanning || justPannedRef.current) {
@@ -1581,7 +1675,8 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
           lineWidth: strokeWidth,
           lineStyle: lineStyle,
           opacity: opacity,
-          arrowType: arrowType
+          arrowType: arrowType,
+          arrowSize: arrowSize
         };
         setElements(prev => [...prev, newElement]);
         setActionHistory(prev => [...prev, { type: 'element' }]);
@@ -2216,7 +2311,8 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
         lineWidth: strokeWidth,
         lineStyle: lineStyle,
         opacity: opacity,
-        arrowType: arrowType
+        arrowType: arrowType,
+        arrowSize: arrowSize
       };
       setElements(prev => [...prev, newElement]);
       setActionHistory(prev => [...prev, { type: 'element' }]);
@@ -2249,7 +2345,8 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
           lineWidth: strokeWidth,
           lineStyle: lineStyle,
           opacity: opacity,
-          arrowType: arrowType
+          arrowType: arrowType,
+          arrowSize: arrowSize
         };
         setElements(prev => [...prev, newElement]);
         setActionHistory(prev => [...prev, { type: 'element' }]);
@@ -2277,12 +2374,13 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       lineWidth: strokeWidth,
       lineStyle: lineStyle,
       opacity: opacity,
-      arrowType: arrowType
+      arrowType: arrowType,
+      arrowSize: arrowSize
     };
     setElements(prev => [...prev, newElement]);
     setActionHistory(prev => [...prev, { type: 'element' }]);
     setRedoHistory([]);
-  }, [strokeColor, strokeWidth, lineStyle, opacity, arrowType]);
+  }, [strokeColor, strokeWidth, lineStyle, opacity, arrowType, arrowSize]);
 
   const addPointByCoordinates = useCallback((point: Point) => {
     const newElement: GraphElement = {
@@ -3266,7 +3364,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     return firstElementId !== undefined ? firstElementId : null;
   }, [selection]);
 
-  const updateSelectedElement = useCallback((color: string, lineWidth: number, addToHistory: boolean = false, previousState?: GraphElement, lineStyleParam?: 'solid' | 'dashed' | 'dotted', opacityParam?: number, arrowTypeParam?: 'none' | 'end' | 'start' | 'both') => {
+  const updateSelectedElement = useCallback((color: string, lineWidth: number, addToHistory: boolean = false, previousState?: GraphElement, lineStyleParam?: 'solid' | 'dashed' | 'dotted', opacityParam?: number, arrowTypeParam?: 'none' | 'end' | 'start' | 'both', arrowSizeParam?: number) => {
     if (selection.elementIds.size === 0) {
       return;
     }
@@ -3299,6 +3397,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
         if (lineStyleParam !== undefined) element.lineStyle = lineStyleParam;
         if (opacityParam !== undefined) element.opacity = opacityParam;
         if (arrowTypeParam !== undefined) element.arrowType = arrowTypeParam;
+        if (arrowSizeParam !== undefined) element.arrowSize = arrowSizeParam;
         newElements[id] = element;
       });
       return newElements;
@@ -3446,12 +3545,14 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
         cursor: isPanning ? 'grabbing' : 'crosshair'
       }}
       onClick={handleCanvasClick}
+      onContextMenu={handleContextMenu}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
       onTouchStart={(e) => {
         e.preventDefault();
+        handleTouchStartForLongPress(e);
         handleMouseDown(e);
         // For touch devices, also handle click logic on touch start
         if (drawMode === 'line' || drawMode === 'bezier' || drawMode === 'select' || drawMode === 'point') {
@@ -3460,10 +3561,12 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       }}
       onTouchMove={(e) => {
         e.preventDefault();
+        handleTouchMoveForLongPress();
         handleMouseMove(e);
       }}
       onTouchEnd={(e) => {
         e.preventDefault();
+        handleTouchEndForLongPress();
         handleMouseUp();
       }}
     />

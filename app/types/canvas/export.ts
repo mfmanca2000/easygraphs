@@ -54,6 +54,7 @@ export interface GraphCanvasProps {
   lineStyle: LineStyle;
   opacity: number;
   arrowType: ArrowType;
+  arrowSize: number;
   curveType: CurveType;
   drawMode: DrawMode;
   scale: { x: number; y: number };
@@ -65,6 +66,7 @@ export interface GraphCanvasProps {
   onScaleChange?: (scale: { x: number; y: number }) => void;
   onLabelsChange?: (labels: GraphLabels) => void;
   onIntersectionsChange?: (intersections: IntersectionPoint[]) => void;
+  onIntersectionContextMenu?: (intersectionIndex: number, x: number, y: number) => void;
 }
 
 export interface GraphCanvasHandle {
@@ -81,7 +83,7 @@ export interface GraphCanvasHandle {
   exportToPDF: (pageSize?: string, orientation?: 'portrait' | 'landscape') => void;
   getSelectedElement: () => GraphElement | null;
   getSelectedElementId: () => number | null;
-  updateSelectedElement: (color: string, lineWidth: number, addToHistory?: boolean, previousState?: GraphElement, lineStyle?: LineStyle, opacity?: number, arrowType?: ArrowType) => void;
+  updateSelectedElement: (color: string, lineWidth: number, addToHistory?: boolean, previousState?: GraphElement, lineStyle?: LineStyle, opacity?: number, arrowType?: ArrowType, arrowSize?: number) => void;
   addModifyAction: (elementId: number, previousState: GraphElement) => void;
   getExportData: () => GraphExportData;
   importData: (data: GraphExportData) => void;

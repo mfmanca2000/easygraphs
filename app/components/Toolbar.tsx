@@ -18,6 +18,8 @@ export interface ToolbarProps {
   onOpacityChange: (opacity: number) => void;
   arrowType: 'none' | 'end' | 'start' | 'both';
   onArrowTypeChange: (type: 'none' | 'end' | 'start' | 'both') => void;
+  arrowSize: number;
+  onArrowSizeChange: (size: number) => void;
   curveType: 'quadratic' | 'cubic' | 's-curve';
   onCurveTypeChange: (type: 'quadratic' | 'cubic' | 's-curve') => void;
   drawMode: DrawMode;
@@ -45,6 +47,8 @@ export default function Toolbar({
   onOpacityChange,
   arrowType,
   onArrowTypeChange,
+  arrowSize,
+  onArrowSizeChange,
   curveType,
   onCurveTypeChange,
   drawMode,
@@ -200,6 +204,34 @@ export default function Toolbar({
             ))}
           </div>
         </div>
+
+        {/* Arrow Size - only show when arrows are enabled */}
+        {arrowType !== 'none' && (
+          <div>
+            <label className="text-sm font-medium block mb-3" style={{ color: 'var(--pencil-lead)' }}>
+              Arrow Size
+              <span className="ml-2 font-mono" style={{ color: 'var(--architect-orange)' }}>
+                {arrowSize}px
+              </span>
+            </label>
+            <Slider
+              min={3}
+              max={10}
+              step={1}
+              value={[arrowSize]}
+              onValueChange={(value) => onArrowSizeChange(value[0])}
+              className="w-full"
+            />
+            <div className="flex justify-between text-xs mt-1" style={{
+              color: 'var(--pencil-lead)',
+              opacity: 0.6,
+              fontFamily: 'JetBrains Mono, monospace'
+            }}>
+              <span>3</span>
+              <span>10</span>
+            </div>
+          </div>
+        )}
 
         {/* Curve Type - only show when bezier mode is selected */}
         {drawMode === 'bezier' && (
