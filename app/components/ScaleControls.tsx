@@ -1,6 +1,7 @@
 'use client';
 
 import { Slider } from './ui/slider';
+import { ZoomIn, ZoomOut } from 'lucide-react';
 
 export interface ScaleControlsProps {
   scale: { x: number; y: number };
@@ -8,8 +9,49 @@ export interface ScaleControlsProps {
 }
 
 export default function ScaleControls({ scale, onScaleChange }: ScaleControlsProps) {
+  const handleZoomIn = () => {
+    const newScaleX = Math.min(100, scale.x * 1.1);
+    const newScaleY = Math.min(100, scale.y * 1.1);
+    onScaleChange({ x: newScaleX, y: newScaleY });
+  };
+
+  const handleZoomOut = () => {
+    const newScaleX = Math.max(10, scale.x * 0.9);
+    const newScaleY = Math.max(10, scale.y * 0.9);
+    onScaleChange({ x: newScaleX, y: newScaleY });
+  };
+
   return (
     <div className="space-y-4">
+        {/* Zoom Buttons */}
+        <div className="flex gap-2">
+          <button
+            onClick={handleZoomIn}
+            className="flex-1 px-4 py-2 rounded-md text-sm font-medium transition-all flex items-center justify-center gap-2"
+            style={{
+              background: 'var(--architect-blue)',
+              color: 'white',
+              border: 'none'
+            }}
+            title="Zoom In"
+          >
+            <ZoomIn size={16} />
+            Zoom In
+          </button>
+          <button
+            onClick={handleZoomOut}
+            className="flex-1 px-4 py-2 rounded-md text-sm font-medium transition-all flex items-center justify-center gap-2"
+            style={{
+              background: 'var(--architect-blue)',
+              color: 'white',
+              border: 'none'
+            }}
+            title="Zoom Out"
+          >
+            <ZoomOut size={16} />
+            Zoom Out
+          </button>
+        </div>
         {/* X Scale */}
         <div>
           <label className="text-sm font-medium block mb-2" style={{ color: 'var(--pencil-lead)' }}>

@@ -67,6 +67,8 @@ export interface GraphCanvasProps {
   onLabelsChange?: (labels: GraphLabels) => void;
   onIntersectionsChange?: (intersections: IntersectionPoint[]) => void;
   onIntersectionContextMenu?: (intersectionIndex: number, x: number, y: number) => void;
+  onElementContextMenu?: (elementId: number, x: number, y: number) => void;
+  onAxisContextMenu?: (axis: 'x' | 'y', x: number, y: number) => void;
 }
 
 export interface GraphCanvasHandle {

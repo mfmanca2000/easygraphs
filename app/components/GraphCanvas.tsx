@@ -28,6 +28,7 @@ import {
   calculateTitleOffset as calculateTitleOffsetUtil,
   calculateDefaultPanOffset as calculateDefaultPanOffsetUtil,
   isClickNearAxis as isClickNearAxisUtil,
+  detectClickedAxis,
   isElementInSelectionBox as isElementInSelectionBoxUtil,
   isTextBoxInSelectionBox as isTextBoxInSelectionBoxUtil,
   isPointInTextBox as isPointInTextBoxUtil,
@@ -78,7 +79,9 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     onElementsChange,
     onScaleChange,
     onLabelsChange,
-    onIntersectionContextMenu
+    onIntersectionContextMenu,
+    onElementContextMenu,
+    onAxisContextMenu
   } = props;
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -1218,10 +1221,24 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     render();
   }, [render]);
 
-  // Initialize default pan offset on mount to focus on first quadrant
+  // Initialize default pan offset when canvas dimensions change
+  // This ensures the view is correctly positioned even after responsive layout changes
+  const lastCanvasDimensions = useRef({ width: 0, height: 0 });
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    if (canvas.width === 0 || canvas.height === 0) return;
+
+    // Check if canvas dimensions have changed
+    const dimensionsChanged =
+      lastCanvasDimensions.current.width !== canvas.width ||
+      lastCanvasDimensions.current.height !== canvas.height;
+
+    if (!dimensionsChanged) return;
+
+    console.log('[PanOffset Auto-adjust] Canvas dimensions changed:', canvas.width, 'x', canvas.height);
+
+    lastCanvasDimensions.current = { width: canvas.width, height: canvas.height };
 
     const titleOffset = getTitleOffset();
     const defaultPanOffset = calculateDefaultPanOffsetUtil(
@@ -1230,8 +1247,10 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       scale,
       titleOffset
     );
+
+    console.log('[PanOffset Auto-adjust] New offset:', defaultPanOffset.x, ',', defaultPanOffset.y);
     setPanOffset(defaultPanOffset);
-  }, []); // Empty dependency array - run only on mount
+  }, [width, height, scale]); // Run when canvas dimensions or scale change
 
   // Clear selection when switching away from select/textbox modes
   useEffect(() => {
@@ -1240,56 +1259,6 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     }
   }, [drawMode]);
 
-  // Add wheel event listener with passive: false to allow preventDefault
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const wheelHandler = (e: WheelEvent) => {
-      e.preventDefault();
-
-      if (!onScaleChange) return;
-
-      // Get mouse position in canvas coordinates
-      const rect = canvas.getBoundingClientRect();
-      const canvasX = e.clientX - rect.left;
-      const canvasY = e.clientY - rect.top;
-
-      // Calculate title offset
-      const titleOffset = getTitleOffset();
-
-      // Get current center with offset
-      const centerX = canvas.width / 2 + panOffset.x;
-      const centerY = (canvas.height + titleOffset) / 2 + panOffset.y;
-
-      // Calculate graph coordinates of mouse position (before zoom)
-      const graphX = (canvasX - centerX) / scale.x;
-      const graphY = (centerY - canvasY) / scale.y;
-
-      // Calculate zoom factor (negative deltaY means zoom in)
-      const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
-
-      // Calculate new scale
-      const newScaleX = Math.min(100, Math.max(10, scale.x * zoomFactor));
-      const newScaleY = Math.min(100, Math.max(10, scale.y * zoomFactor));
-
-      // Calculate new offset to keep the graph point under mouse cursor
-      const newOffsetX = canvasX - graphX * newScaleX - canvas.width / 2;
-      const newOffsetY2 = canvasY + graphY * newScaleY - (canvas.height + titleOffset) / 2;
-
-      // Update scale via callback
-      onScaleChange({ x: newScaleX, y: newScaleY });
-
-      // Update pan offset
-      setPanOffset({ x: newOffsetX, y: newOffsetY2 });
-    };
-
-    canvas.addEventListener('wheel', wheelHandler, { passive: false });
-
-    return () => {
-      canvas.removeEventListener('wheel', wheelHandler);
-    };
-  }, [scale, panOffset, onScaleChange, getTitleOffset]);
 
   // Notify parent when selection changes or when selected element's data changes
   useEffect(() => {
@@ -1525,18 +1494,40 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     return null;
   };
 
-  // Handle right-click on canvas (for context menu on intersections)
+  // Handle right-click on canvas (for context menu on intersections, elements, axes)
   const handleContextMenu = (e: React.MouseEvent<HTMLCanvasElement>) => {
     e.preventDefault();
 
     const { x: canvasX, y: canvasY } = getCanvasCoordinates(e);
-    const intersectionIndex = findClickedIntersection(canvasX, canvasY);
+    const canvas = canvasRef.current;
+    if (!canvas) return;
 
+    // Check for intersection first (highest priority)
+    const intersectionIndex = findClickedIntersection(canvasX, canvasY);
     if (intersectionIndex !== null && onIntersectionContextMenu) {
-      // Get the absolute position for the context menu
-      const rect = canvasRef.current?.getBoundingClientRect();
+      const rect = canvas.getBoundingClientRect();
       if (rect) {
         onIntersectionContextMenu(intersectionIndex, e.clientX, e.clientY);
+        return;
+      }
+    }
+
+    // Check for any element (Point or other types)
+    const elementId = findClickedElement(canvasX, canvasY);
+    if (elementId !== null && onElementContextMenu) {
+      const rect = canvas.getBoundingClientRect();
+      if (rect) {
+        onElementContextMenu(elementId, e.clientX, e.clientY);
+        return;
+      }
+    }
+
+    // Check for axis click (lowest priority)
+    const clickedAxis = detectClickedAxis(canvasX, canvasY, canvas.width, canvas.height, panOffset, getTitleOffset());
+    if (clickedAxis && onAxisContextMenu) {
+      const rect = canvas.getBoundingClientRect();
+      if (rect) {
+        onAxisContextMenu(clickedAxis, e.clientX, e.clientY);
       }
     }
   };
@@ -1548,21 +1539,63 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
   const handleTouchStartForLongPress = (e: React.TouchEvent<HTMLCanvasElement>) => {
     const touch = e.touches[0];
     const { x: canvasX, y: canvasY } = getCanvasCoordinates(e);
+    const canvas = canvasRef.current;
 
     longPressPositionRef.current = { x: canvasX, y: canvasY };
 
     longPressTimerRef.current = setTimeout(() => {
-      if (longPressPositionRef.current && onIntersectionContextMenu) {
+      if (longPressPositionRef.current && canvas) {
+        // Check for intersection first (highest priority)
         const intersectionIndex = findClickedIntersection(
           longPressPositionRef.current.x,
           longPressPositionRef.current.y
         );
 
-        if (intersectionIndex !== null) {
-          const rect = canvasRef.current?.getBoundingClientRect();
+        if (intersectionIndex !== null && onIntersectionContextMenu) {
+          const rect = canvas.getBoundingClientRect();
           if (rect) {
             onIntersectionContextMenu(
               intersectionIndex,
+              touch.clientX,
+              touch.clientY
+            );
+            return;
+          }
+        }
+
+        // Check for any element if no intersection found
+        const elementId = findClickedElement(
+          longPressPositionRef.current.x,
+          longPressPositionRef.current.y
+        );
+
+        if (elementId !== null && onElementContextMenu) {
+          const rect = canvas.getBoundingClientRect();
+          if (rect) {
+            onElementContextMenu(
+              elementId,
+              touch.clientX,
+              touch.clientY
+            );
+            return;
+          }
+        }
+
+        // Check for axis click (lowest priority)
+        const clickedAxis = detectClickedAxis(
+          longPressPositionRef.current.x,
+          longPressPositionRef.current.y,
+          canvas.width,
+          canvas.height,
+          panOffset,
+          getTitleOffset()
+        );
+
+        if (clickedAxis && onAxisContextMenu) {
+          const rect = canvas.getBoundingClientRect();
+          if (rect) {
+            onAxisContextMenu(
+              clickedAxis,
               touch.clientX,
               touch.clientY
             );
@@ -3522,13 +3555,21 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       const canvas = canvasRef.current;
       if (!canvas) return;
 
+      console.log('[Reset Button] Canvas dimensions:', canvas.width, 'x', canvas.height);
+      console.log('[Reset Button] Scale:', scale.x, 'x', scale.y);
+
       const titleOffset = getTitleOffset();
+      console.log('[Reset Button] Title offset:', titleOffset);
+
       const defaultPanOffset = calculateDefaultPanOffsetUtil(
         canvas.width,
         canvas.height,
         scale,
         titleOffset
       );
+
+      console.log('[Reset Button] Calculated offset:', defaultPanOffset.x, ',', defaultPanOffset.y);
+      console.log('[Reset Button] Current panOffset before set:', panOffset.x, ',', panOffset.y);
       setPanOffset(defaultPanOffset);
     }
   }), [addLineByCoordinates, addPointByCoordinates, addFillArea, addFunction, clearCanvas, undo, redo, elements, exportToPNG, exportToJPEG, exportToPDF, getSelectedElement, getSelectedElementId, updateSelectedElement, addModifyAction, getExportData, importData, togglePointProjection, calculateAllIntersections, getLabels, updateLabels, addTextBox, deleteTextBox, selectTextBox, handleCopy, handlePaste, handleDelete, selection, handleGroup, handleUngroup, groups, scale, getTitleOffset]);

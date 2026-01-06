@@ -65,8 +65,8 @@ export function calculateDefaultPanOffset(
   canvasHeight: number,
   scale: { x: number; y: number },
   titleOffset: number,
-  bottomLeftX: number = -1.5,
-  bottomLeftY: number = -1.5
+  bottomLeftX: number = -0.9,
+  bottomLeftY: number = -0.9
 ): Point {
   // For bottom-left corner of canvas:
   // canvasX = 0, canvasY = canvasHeight
@@ -109,4 +109,35 @@ export function isClickNearAxis(
   const nearHorizontalAxis = Math.abs(canvasY - centerY) < threshold;
 
   return nearVerticalAxis || nearHorizontalAxis;
+}
+
+/**
+ * Detect which axis was clicked (x or y)
+ * Returns 'x' for x-axis, 'y' for y-axis, or null if neither
+ */
+export function detectClickedAxis(
+  canvasX: number,
+  canvasY: number,
+  canvasWidth: number,
+  canvasHeight: number,
+  panOffset: Point,
+  titleOffset: number,
+  threshold: number = 20
+): 'x' | 'y' | null {
+  const centerX = canvasWidth / 2 + panOffset.x;
+  const centerY = (canvasHeight + titleOffset) / 2 + panOffset.y;
+
+  const nearVerticalAxis = Math.abs(canvasX - centerX) < threshold;
+  const nearHorizontalAxis = Math.abs(canvasY - centerY) < threshold;
+
+  // If near both, prioritize y-axis (vertical)
+  if (nearVerticalAxis && centerY >= titleOffset && centerY <= canvasHeight) {
+    return 'y';
+  }
+
+  if (nearHorizontalAxis && centerX >= 0 && centerX <= canvasWidth) {
+    return 'x';
+  }
+
+  return null;
 }

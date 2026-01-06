@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Copy, Clipboard, Trash2, Undo2, Redo2, Save, Upload, Eraser, Focus } from 'lucide-react';
+import { Copy, Clipboard, Trash2, Undo2, Redo2, Save, Upload, Eraser, Focus, ZoomIn, ZoomOut } from 'lucide-react';
 
 export interface ActionsPanelProps {
   onUndo: () => void;
@@ -21,6 +21,8 @@ export interface ActionsPanelProps {
   canUngroup: boolean;
   onClear: () => void;
   onResetToDefault: () => void;
+  onZoomIn: () => void;
+  onZoomOut: () => void;
 }
 
 export default function ActionsPanel({
@@ -41,6 +43,8 @@ export default function ActionsPanel({
   canUngroup,
   onClear,
   onResetToDefault,
+  onZoomIn,
+  onZoomOut,
 }: ActionsPanelProps) {
   const [exportFormat, setExportFormat] = useState<'png' | 'jpeg' | 'pdf'>('png');
   const [jpegQuality, setJpegQuality] = useState(90);
@@ -94,6 +98,37 @@ export default function ActionsPanel({
         >
           <Focus size={16} />
         </button>
+
+        {/* Divider */}
+        <div style={{ width: '1px', height: '32px', background: 'var(--canvas-border)' }} />
+
+        {/* Zoom Controls */}
+        <div className="flex gap-2">
+          <button
+            onClick={onZoomIn}
+            className="px-3 py-2 rounded-md text-sm font-medium transition-all flex items-center gap-2"
+            style={{
+              background: 'transparent',
+              color: 'var(--architect-blue)',
+              border: '1.5px solid var(--canvas-border)'
+            }}
+            title="Zoom In"
+          >
+            <ZoomIn size={16} />
+          </button>
+          <button
+            onClick={onZoomOut}
+            className="px-3 py-2 rounded-md text-sm font-medium transition-all flex items-center gap-2"
+            style={{
+              background: 'transparent',
+              color: 'var(--architect-blue)',
+              border: '1.5px solid var(--canvas-border)'
+            }}
+            title="Zoom Out"
+          >
+            <ZoomOut size={16} />
+          </button>
+        </div>
 
         {/* Divider */}
         <div style={{ width: '1px', height: '32px', background: 'var(--canvas-border)' }} />

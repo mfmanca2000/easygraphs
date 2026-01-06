@@ -13,6 +13,7 @@ import FillAreaControls from './components/FillAreaControls';
 import FunctionInput from './components/FunctionInput';
 import LabelControls from './components/LabelControls';
 import CharacterPalette from './components/CharacterPalette';
+import AddLabelModal from './components/AddLabelModal';
 import QuickGuidePanel from './components/QuickGuidePanel';
 import { CollapsiblePanel } from './components/CollapsiblePanel';
 import { Sidebar } from './components/Sidebar';
@@ -56,6 +57,18 @@ export default function Home() {
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [intersectionContextMenu, setIntersectionContextMenu] = useState<{
     intersectionIndex: number;
+    x: number;
+    y: number;
+  } | null>(null);
+  const [elementContextMenu, setElementContextMenu] = useState<{
+    elementId: number;
+    x: number;
+    y: number;
+  } | null>(null);
+  const [showAddLabelModal, setShowAddLabelModal] = useState(false);
+  const [labelModalElementId, setLabelModalElementId] = useState<number | null>(null);
+  const [axisContextMenu, setAxisContextMenu] = useState<{
+    axis: 'x' | 'y';
     x: number;
     y: number;
   } | null>(null);
@@ -229,6 +242,18 @@ export default function Home() {
   const handleResetToDefault = () => {
     setScale({ x: 40, y: 40 });
     canvasRef.current?.resetPanOffset();
+  };
+
+  const handleZoomIn = () => {
+    const newScaleX = Math.min(100, scale.x * 1.1);
+    const newScaleY = Math.min(100, scale.y * 1.1);
+    setScale({ x: newScaleX, y: newScaleY });
+  };
+
+  const handleZoomOut = () => {
+    const newScaleX = Math.max(10, scale.x * 0.9);
+    const newScaleY = Math.max(10, scale.y * 0.9);
+    setScale({ x: newScaleX, y: newScaleY });
   };
 
   const handleCopy = () => {
@@ -535,6 +560,107 @@ export default function Home() {
     setIntersectionContextMenu(null);
   };
 
+  const handleElementContextMenu = (elementId: number, x: number, y: number) => {
+    setElementContextMenu({ elementId, x, y });
+  };
+
+  const handleCloseElementContextMenu = () => {
+    setElementContextMenu(null);
+  };
+
+  const handleTogglePointProjectionFromMenu = (elementId: number) => {
+    handleTogglePointProjection(elementId);
+    handleCloseElementContextMenu();
+  };
+
+  const handleOpenAddLabelModal = (elementId: number) => {
+    setLabelModalElementId(elementId);
+    setShowAddLabelModal(true);
+    handleCloseElementContextMenu();
+  };
+
+  const handleAxisContextMenu = (axis: 'x' | 'y', x: number, y: number) => {
+    setAxisContextMenu({ axis, x, y });
+  };
+
+  const handleCloseAxisContextMenu = () => {
+    setAxisContextMenu(null);
+  };
+
+  const handleOpenAddAxisLabelModal = (axis: 'x' | 'y') => {
+    // Store axis info in a way the modal can access
+    // We'll use a special element ID to indicate it's an axis: -1 for x-axis, -2 for y-axis
+    setLabelModalElementId(axis === 'x' ? -1 : -2);
+    setShowAddLabelModal(true);
+    handleCloseAxisContextMenu();
+  };
+
+  const handleCloseAddLabelModal = () => {
+    setShowAddLabelModal(false);
+    setLabelModalElementId(null);
+  };
+
+  const handleAddLabel = (text: string) => {
+    if (labelModalElementId === null || !canvasRef.current) return;
+
+    // Check if this is an axis label (special IDs: -1 for x-axis, -2 for y-axis)
+    if (labelModalElementId === -1 || labelModalElementId === -2) {
+      const isXAxis = labelModalElementId === -1;
+      const newLabels = {
+        ...labels,
+        axisLabels: {
+          ...labels.axisLabels,
+          ...(isXAxis ? { xLabel: text } : { yLabel: text })
+        }
+      };
+
+      setLabels(newLabels);
+      if (canvasRef.current) {
+        canvasRef.current.updateLabels(newLabels, true);
+      }
+      return;
+    }
+
+    // Regular element label
+    const element = canvasRef.current.getElements()[labelModalElementId];
+    if (!element) return;
+
+    // Calculate reference point for label based on element type
+    let refPoint: Point;
+    if (element.type === 'point') {
+      refPoint = element.points[0];
+    } else if (element.type === 'line' || element.type === 'bezier') {
+      refPoint = {
+        x: (element.points[0].x + element.points[1].x) / 2,
+        y: (element.points[0].y + element.points[1].y) / 2
+      };
+    } else {
+      refPoint = element.points[Math.floor(element.points.length / 2)];
+    }
+
+    // Create new element label
+    const newElementLabel = {
+      elementId: labelModalElementId,
+      text: text,
+      offsetX: 15, // Default offset from element
+      offsetY: -15,
+      fontFamily: 'JetBrains Mono',
+      fontSize: 14,
+      color: element.color,
+      anchorPoint: 'start' as const
+    };
+
+    const newLabels = {
+      ...labels,
+      elementLabels: [...labels.elementLabels, newElementLabel]
+    };
+
+    setLabels(newLabels);
+    if (canvasRef.current) {
+      canvasRef.current.updateLabels(newLabels, true);
+    }
+  };
+
   const handleLabelsChange = (newLabels: GraphLabels, addToHistory: boolean = false) => {
     setLabels(newLabels);
     if (canvasRef.current) {
@@ -824,6 +950,8 @@ export default function Home() {
                 canUngroup={canUngroup}
                 onClear={handleClear}
                 onResetToDefault={handleResetToDefault}
+                onZoomIn={handleZoomIn}
+                onZoomOut={handleZoomOut}
               />
             </div>
 
@@ -862,6 +990,8 @@ export default function Home() {
                   onScaleChange={setScale}
                   onLabelsChange={handleCanvasLabelsChange}
                   onIntersectionContextMenu={handleIntersectionContextMenu}
+                  onElementContextMenu={handleElementContextMenu}
+                  onAxisContextMenu={handleAxisContextMenu}
                 />
               </div>
             </div>
@@ -1096,6 +1226,112 @@ export default function Home() {
           </div>
         </>
       )}
+
+      {/* Element Context Menu */}
+      {elementContextMenu && canvasRef.current && (
+        <>
+          <div
+            className="fixed inset-0 z-40"
+            onClick={handleCloseElementContextMenu}
+          />
+          <div
+            className="fixed z-50 rounded-lg shadow-lg py-2"
+            style={{
+              left: `${elementContextMenu.x}px`,
+              top: `${elementContextMenu.y}px`,
+              background: '#FFFFFF',
+              border: '2px solid #E74C3C',
+              minWidth: '180px'
+            }}
+          >
+            {canvasRef.current.getElements()[elementContextMenu.elementId]?.type === 'point' && (
+              <button
+                onClick={() => {
+                  handleTogglePointProjectionFromMenu(elementContextMenu.elementId);
+                }}
+                className="w-full px-4 py-2 text-left text-sm font-medium transition-all hover:bg-opacity-10"
+                style={{
+                  color: '#E74C3C',
+                  background: 'transparent'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(231, 76, 60, 0.1)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'transparent';
+                }}
+              >
+                {canvasRef.current.getElements()[elementContextMenu.elementId]?.showProjection ? '✓ Hide Projection' : '+ Show Projection'}
+              </button>
+            )}
+            <button
+              onClick={() => {
+                handleOpenAddLabelModal(elementContextMenu.elementId);
+              }}
+              className="w-full px-4 py-2 text-left text-sm font-medium transition-all hover:bg-opacity-10"
+              style={{
+                color: '#E74C3C',
+                background: 'transparent'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(231, 76, 60, 0.1)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'transparent';
+              }}
+            >
+              + Add Label
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* Axis Context Menu */}
+      {axisContextMenu && (
+        <>
+          <div
+            className="fixed inset-0 z-40"
+            onClick={handleCloseAxisContextMenu}
+          />
+          <div
+            className="fixed z-50 rounded-lg shadow-lg py-2"
+            style={{
+              left: `${axisContextMenu.x}px`,
+              top: `${axisContextMenu.y}px`,
+              background: '#FFFFFF',
+              border: '2px solid #2B5F82',
+              minWidth: '180px'
+            }}
+          >
+            <button
+              onClick={() => {
+                handleOpenAddAxisLabelModal(axisContextMenu.axis);
+              }}
+              className="w-full px-4 py-2 text-left text-sm font-medium transition-all hover:bg-opacity-10"
+              style={{
+                color: '#2B5F82',
+                background: 'transparent'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(43, 95, 130, 0.1)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'transparent';
+              }}
+            >
+              + Add Label to {axisContextMenu.axis.toUpperCase()}-Axis
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* Add Label Modal */}
+      <AddLabelModal
+        isOpen={showAddLabelModal}
+        onClose={handleCloseAddLabelModal}
+        onAddLabel={handleAddLabel}
+        elementId={labelModalElementId ?? 0}
+      />
 
       {/* Character Palette Modal */}
       <CharacterPalette
