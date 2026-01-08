@@ -33,6 +33,17 @@ export interface ElementLabel {
   anchorPoint?: 'start' | 'middle' | 'end';
 }
 
+// Intersection label (attached to intersection points)
+export interface IntersectionLabel {
+  intersectionIndex: number;
+  text: string;
+  offsetX: number; // Offset from intersection point
+  offsetY: number;
+  fontFamily: string;
+  fontSize: number;
+  color: string;
+}
+
 // Text box (draggable/resizable)
 export interface TextBox {
   id: string; // UUID
@@ -56,6 +67,7 @@ export interface GraphLabels {
   axisLabels: AxisLabels;
   title: GraphTitle;
   elementLabels: ElementLabel[];
+  intersectionLabels: IntersectionLabel[];
   textBoxes: TextBox[];
 }
 
@@ -76,5 +88,6 @@ export const DEFAULT_LABELS: GraphLabels = {
     yOffset: 20
   },
   elementLabels: [],
+  intersectionLabels: [],
   textBoxes: []
 };

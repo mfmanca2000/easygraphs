@@ -8,6 +8,8 @@ export interface ToolbarProps {
   onToggleGrid: () => void;
   showAxisUnits: boolean;
   onToggleAxisUnits: () => void;
+  showOnlyPositive: boolean;
+  onToggleOnlyPositive: () => void;
   strokeColor: string;
   onStrokeColorChange: (color: string) => void;
   strokeWidth: number;
@@ -37,6 +39,8 @@ export default function Toolbar({
   onToggleGrid,
   showAxisUnits,
   onToggleAxisUnits,
+  showOnlyPositive,
+  onToggleOnlyPositive,
   strokeColor,
   onStrokeColorChange,
   strokeWidth,
@@ -317,6 +321,24 @@ export default function Toolbar({
             }}
           >
             {showAxisUnits ? 'Visible' : 'Hidden'}
+          </button>
+        </div>
+
+        {/* Only Positive Toggle */}
+        <div className="flex items-center justify-between">
+          <label className="text-sm font-medium" style={{ color: 'var(--pencil-lead)' }}>
+            Only Positive
+          </label>
+          <button
+            onClick={onToggleOnlyPositive}
+            className="px-4 py-2 rounded-md text-sm font-medium transition-all"
+            style={{
+              background: showOnlyPositive ? 'var(--architect-blue)' : 'var(--graph-lines)',
+              color: showOnlyPositive ? 'white' : 'var(--pencil-lead)',
+              border: showOnlyPositive ? 'none' : '1px solid var(--canvas-border)'
+            }}
+          >
+            {showOnlyPositive ? 'On' : 'Off'}
           </button>
         </div>
 

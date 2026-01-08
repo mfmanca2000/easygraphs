@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import { flushSync } from 'react-dom';
 import { HelpCircle, Menu } from 'lucide-react';
 import GraphCanvas from './components/GraphCanvas';
-import type { DrawMode, Point, GraphCanvasHandle, GraphElement, EasyGraphsExport, GraphLabels, IntersectionPoint } from '@/app/types/canvas';
+import type { DrawMode, Point, GraphCanvasHandle, GraphElement, EasyGraphsExport, GraphLabels, IntersectionPoint, IntersectionLabel } from '@/app/types/canvas';
 import { DEFAULT_LABELS } from '@/app/types/canvas';
 import Toolbar from './components/Toolbar';
 import ScaleControls from './components/ScaleControls';
@@ -25,6 +25,7 @@ export default function Home() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [showGrid, setShowGrid] = useState(true);
   const [showAxisUnits, setShowAxisUnits] = useState(true);
+  const [showOnlyPositive, setShowOnlyPositive] = useState(false);
   const [strokeColor, setStrokeColor] = useState('#000000');
   const [strokeWidth, setStrokeWidth] = useState(2);
   const [lineStyle, setLineStyle] = useState<'solid' | 'dashed' | 'dotted'>('solid');
@@ -755,6 +756,8 @@ export default function Home() {
               onToggleGrid={() => setShowGrid(!showGrid)}
               showAxisUnits={showAxisUnits}
               onToggleAxisUnits={() => setShowAxisUnits(!showAxisUnits)}
+              showOnlyPositive={showOnlyPositive}
+              onToggleOnlyPositive={() => setShowOnlyPositive(!showOnlyPositive)}
               strokeColor={strokeColor}
               onStrokeColorChange={setStrokeColor}
               strokeWidth={strokeWidth}
@@ -779,6 +782,7 @@ export default function Home() {
               labels={labels}
               onLabelsChange={handleLabelsChange}
               elements={elements}
+              intersectionPoints={intersectionPoints}
               onCharacterPaletteOpen={() => setShowCharacterPalette(true)}
               onTextBoxSelect={handleTextBoxSelect}
             />
@@ -844,6 +848,8 @@ export default function Home() {
                 onToggleGrid={() => setShowGrid(!showGrid)}
                 showAxisUnits={showAxisUnits}
                 onToggleAxisUnits={() => setShowAxisUnits(!showAxisUnits)}
+                showOnlyPositive={showOnlyPositive}
+                onToggleOnlyPositive={() => setShowOnlyPositive(!showOnlyPositive)}
                 strokeColor={strokeColor}
                 onStrokeColorChange={setStrokeColor}
                 strokeWidth={strokeWidth}
@@ -868,6 +874,7 @@ export default function Home() {
                 labels={labels}
                 onLabelsChange={handleLabelsChange}
                 elements={elements}
+                intersectionPoints={intersectionPoints}
                 onCharacterPaletteOpen={() => setShowCharacterPalette(true)}
                 onTextBoxSelect={handleTextBoxSelect}
               />
@@ -973,6 +980,7 @@ export default function Home() {
                   height={canvasSize.height}
                   showGrid={showGrid}
                   showAxisUnits={showAxisUnits}
+                  showOnlyPositive={showOnlyPositive}
                   strokeColor={strokeColor}
                   strokeWidth={strokeWidth}
                   lineStyle={lineStyle}
@@ -1222,6 +1230,48 @@ export default function Home() {
               }}
             >
               {showIntersections && intersectionPoints[intersectionContextMenu.intersectionIndex]?.showProjection ? '✓ Hide Projection' : '+ Show Projection'}
+            </button>
+            <button
+              onClick={() => {
+                const intersection = intersectionPoints[intersectionContextMenu.intersectionIndex];
+                if (intersection) {
+                  // Check if a label already exists for this intersection
+                  const existingLabelIndex = labels.intersectionLabels.findIndex(
+                    l => l.intersectionIndex === intersectionContextMenu.intersectionIndex
+                  );
+
+                  if (existingLabelIndex === -1) {
+                    // Add new label
+                    const newLabel: IntersectionLabel = {
+                      intersectionIndex: intersectionContextMenu.intersectionIndex,
+                      text: `(${intersection.point.x.toFixed(2)}, ${intersection.point.y.toFixed(2)})`,
+                      offsetX: 10,
+                      offsetY: -10,
+                      fontFamily: 'DM Sans, sans-serif',
+                      fontSize: 14,
+                      color: '#9B59B6'
+                    };
+                    handleLabelsChange({
+                      ...labels,
+                      intersectionLabels: [...labels.intersectionLabels, newLabel]
+                    }, true);
+                  }
+                }
+                handleCloseIntersectionContextMenu();
+              }}
+              className="w-full px-4 py-2 text-left text-sm font-medium transition-all hover:bg-opacity-10"
+              style={{
+                color: '#9B59B6',
+                background: 'transparent'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(155, 89, 182, 0.1)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'transparent';
+              }}
+            >
+              + Add Label
             </button>
           </div>
         </>

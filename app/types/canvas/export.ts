@@ -49,6 +49,7 @@ export interface GraphCanvasProps {
   height?: number;
   showGrid: boolean;
   showAxisUnits?: boolean;
+  showOnlyPositive?: boolean;
   strokeColor: string;
   strokeWidth: number;
   lineStyle: LineStyle;

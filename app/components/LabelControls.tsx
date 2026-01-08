@@ -2,23 +2,25 @@
 
 import { useState } from 'react';
 import { Trash2 } from 'lucide-react';
-import type { GraphLabels, GraphElement, ElementLabel, TextBox } from '@/app/types/canvas';
+import type { GraphLabels, GraphElement, ElementLabel, TextBox, IntersectionPoint, IntersectionLabel } from '@/app/types/canvas';
 import { Slider } from './ui/slider';
 
 interface LabelControlsProps {
   labels: GraphLabels;
   onLabelsChange: (labels: GraphLabels, addToHistory?: boolean) => void;
   elements: GraphElement[];
+  intersectionPoints: IntersectionPoint[];
   onCharacterPaletteOpen: () => void;
   onTextBoxSelect?: (id: string) => void;
 }
 
-type Tab = 'title' | 'axes' | 'elements' | 'textboxes';
+type Tab = 'title' | 'axes' | 'elements' | 'intersections' | 'textboxes';
 
 export default function LabelControls({
   labels,
   onLabelsChange,
   elements,
+  intersectionPoints,
   onCharacterPaletteOpen,
   onTextBoxSelect
 }: LabelControlsProps) {
@@ -90,6 +92,49 @@ export default function LabelControls({
   };
 
   const handleElementLabelBlur = () => {
+    onLabelsChange(labels, true);
+  };
+
+  const handleAddIntersectionLabel = (intersectionIndex: number) => {
+    const intersection = intersectionPoints[intersectionIndex];
+    if (!intersection) return;
+
+    const newLabel: IntersectionLabel = {
+      intersectionIndex,
+      text: `(${intersection.point.x.toFixed(2)}, ${intersection.point.y.toFixed(2)})`,
+      offsetX: 10,
+      offsetY: -10,
+      fontFamily: 'DM Sans, sans-serif',
+      fontSize: 14,
+      color: '#9B59B6'
+    };
+
+    onLabelsChange({
+      ...labels,
+      intersectionLabels: [...labels.intersectionLabels, newLabel]
+    }, true);
+  };
+
+  const handleRemoveIntersectionLabel = (index: number) => {
+    onLabelsChange({
+      ...labels,
+      intersectionLabels: labels.intersectionLabels.filter((_, i) => i !== index)
+    }, true);
+  };
+
+  const handleIntersectionLabelChange = (index: number, field: keyof IntersectionLabel, value: string | number) => {
+    const updatedLabels = [...labels.intersectionLabels];
+    updatedLabels[index] = {
+      ...updatedLabels[index],
+      [field]: value
+    };
+    onLabelsChange({
+      ...labels,
+      intersectionLabels: updatedLabels
+    });
+  };
+
+  const handleIntersectionLabelBlur = () => {
     onLabelsChange(labels, true);
   };
 
@@ -186,6 +231,18 @@ export default function LabelControls({
           }}
         >
           Elements
+        </button>
+        <button
+          onClick={() => setActiveTab('intersections')}
+          className="flex-1 px-3 py-2 text-sm font-medium transition-colors"
+          style={{
+            color: activeTab === 'intersections' ? 'var(--architect-blue)' : 'var(--pencil-lead)',
+            borderBottom: activeTab === 'intersections' ? '2px solid var(--architect-blue)' : 'none',
+            opacity: activeTab === 'intersections' ? 1 : 0.6,
+            fontFamily: 'JetBrains Mono, monospace'
+          }}
+        >
+          Intersections
         </button>
         <button
           onClick={() => setActiveTab('textboxes')}
@@ -432,6 +489,80 @@ export default function LabelControls({
                             value={existingLabel.text}
                             onChange={(e) => handleElementLabelChange(existingLabelIndex, 'text', e.target.value)}
                             onBlur={handleElementLabelBlur}
+                            placeholder="Label text"
+                            className="w-full px-3 py-2 text-sm rounded-md focus:outline-none"
+                            style={{
+                              border: '1.5px solid var(--canvas-border)',
+                              fontFamily: 'JetBrains Mono, monospace',
+                              color: 'var(--pencil-lead)'
+                            }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Intersections Tab */}
+        {activeTab === 'intersections' && (
+          <div className="space-y-4">
+            <p className="text-sm" style={{ color: 'var(--pencil-lead)', opacity: 0.7 }}>
+              Add labels to intersection points.
+            </p>
+
+            {intersectionPoints.length === 0 ? (
+              <p className="text-sm italic" style={{ color: 'var(--pencil-lead)', opacity: 0.5 }}>
+                No intersections found. Draw intersecting lines to create intersection points.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {intersectionPoints.map((intersection, index) => {
+                  const existingLabel = labels.intersectionLabels.find(l => l.intersectionIndex === index);
+                  const existingLabelIndex = labels.intersectionLabels.findIndex(l => l.intersectionIndex === index);
+
+                  return (
+                    <div
+                      key={index}
+                      className="p-3 rounded-md"
+                      style={{ border: '1.5px solid var(--canvas-border)' }}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-medium" style={{
+                          color: '#9B59B6',
+                          fontFamily: 'JetBrains Mono, monospace'
+                        }}>
+                          Intersection #{index} ({intersection.point.x.toFixed(2)}, {intersection.point.y.toFixed(2)})
+                        </span>
+                        {existingLabel ? (
+                          <button
+                            onClick={() => handleRemoveIntersectionLabel(existingLabelIndex)}
+                            className="text-xs font-medium"
+                            style={{ color: '#E74C3C' }}
+                          >
+                            Remove Label
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleAddIntersectionLabel(index)}
+                            className="text-xs font-medium"
+                            style={{ color: '#9B59B6' }}
+                          >
+                            Add Label
+                          </button>
+                        )}
+                      </div>
+
+                      {existingLabel && (
+                        <div className="space-y-2">
+                          <input
+                            type="text"
+                            value={existingLabel.text}
+                            onChange={(e) => handleIntersectionLabelChange(existingLabelIndex, 'text', e.target.value)}
+                            onBlur={handleIntersectionLabelBlur}
                             placeholder="Label text"
                             className="w-full px-3 py-2 text-sm rounded-md focus:outline-none"
                             style={{

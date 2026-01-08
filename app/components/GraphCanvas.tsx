@@ -6,7 +6,7 @@ import { useEffect, useRef, useCallback, useImperativeHandle, forwardRef } from 
 import { flushSync } from 'react-dom';
 import { Parser } from 'expr-eval';
 import type {
-  Point,  
+  Point,
   GraphElement,
   FillArea,
   IntersectionPoint,
@@ -15,11 +15,12 @@ import type {
   Group,
   ClipboardData,
   Action,
-  GraphExportData,  
+  GraphExportData,
   GraphCanvasProps,
   GraphCanvasHandle,
   TextBox,
-  ElementLabel
+  ElementLabel,
+  IntersectionLabel
 } from '@/app/types/canvas';
 import { DEFAULT_LABELS } from '@/app/types/canvas';
 import {
@@ -63,6 +64,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     height = 600,
     showGrid,
     showAxisUnits = true,
+    showOnlyPositive = false,
     strokeColor,
     strokeWidth,
     lineStyle,
@@ -167,6 +169,10 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     setSelectedElementLabelIndex,
     draggingElementLabel,
     setDraggingElementLabel,
+    selectedIntersectionLabelIndex,
+    setSelectedIntersectionLabelIndex,
+    draggingIntersectionLabel,
+    setDraggingIntersectionLabel,
     labelsDragStartRef
   } = useCanvasLabels();
 
@@ -265,21 +271,37 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       const bottomEdge = (centerY - canvas.height) / scale.y;
 
       // Draw vertical grid lines (only in graph area, below title)
-      for (let i = Math.floor(leftEdge); i <= Math.ceil(rightEdge); i++) {
+      const startX = showOnlyPositive ? Math.max(0, Math.floor(leftEdge)) : Math.floor(leftEdge);
+      for (let i = startX; i <= Math.ceil(rightEdge); i++) {
         const x = centerX + i * scale.x;
         ctx.beginPath();
-        ctx.moveTo(x, titleOffset);
-        ctx.lineTo(x, canvas.height);
+        if (showOnlyPositive) {
+          // Only draw from origin upward (positive Y)
+          ctx.moveTo(x, centerY);
+          ctx.lineTo(x, titleOffset);
+        } else {
+          // Draw full vertical line
+          ctx.moveTo(x, titleOffset);
+          ctx.lineTo(x, canvas.height);
+        }
         ctx.stroke();
       }
 
       // Draw horizontal grid lines (only in graph area, below title)
-      for (let i = Math.floor(bottomEdge); i <= Math.ceil(topEdge); i++) {
+      const startY = showOnlyPositive ? Math.max(0, Math.floor(bottomEdge)) : Math.floor(bottomEdge);
+      for (let i = startY; i <= Math.ceil(topEdge); i++) {
         const y = centerY - i * scale.y;
         if (y >= titleOffset) { // Only draw if below title area
           ctx.beginPath();
-          ctx.moveTo(0, y);
-          ctx.lineTo(canvas.width, y);
+          if (showOnlyPositive) {
+            // Only draw from origin to the right (positive X)
+            ctx.moveTo(centerX, y);
+            ctx.lineTo(canvas.width, y);
+          } else {
+            // Draw full horizontal line
+            ctx.moveTo(0, y);
+            ctx.lineTo(canvas.width, y);
+          }
           ctx.stroke();
         }
       }
@@ -292,15 +314,29 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     // X-axis
     if (centerY >= titleOffset) { // Only draw if below title area
       ctx.beginPath();
-      ctx.moveTo(0, centerY);
-      ctx.lineTo(canvas.width, centerY);
+      if (showOnlyPositive) {
+        // Only draw from origin to the right
+        ctx.moveTo(centerX, centerY);
+        ctx.lineTo(canvas.width, centerY);
+      } else {
+        // Draw full horizontal axis
+        ctx.moveTo(0, centerY);
+        ctx.lineTo(canvas.width, centerY);
+      }
       ctx.stroke();
     }
 
     // Y-axis (only in graph area, below title)
     ctx.beginPath();
-    ctx.moveTo(centerX, titleOffset);
-    ctx.lineTo(centerX, canvas.height);
+    if (showOnlyPositive) {
+      // Only draw from origin upward
+      ctx.moveTo(centerX, centerY);
+      ctx.lineTo(centerX, titleOffset);
+    } else {
+      // Draw full vertical axis
+      ctx.moveTo(centerX, titleOffset);
+      ctx.lineTo(centerX, canvas.height);
+    }
     ctx.stroke();
 
     // Draw axis units if enabled
@@ -317,7 +353,8 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       const bottomEdge = (centerY - canvas.height) / scale.y;
 
       // X-axis units
-      for (let i = Math.floor(leftEdge); i <= Math.ceil(rightEdge); i++) {
+      const unitsStartX = showOnlyPositive ? Math.max(0, Math.floor(leftEdge)) : Math.floor(leftEdge);
+      for (let i = unitsStartX; i <= Math.ceil(rightEdge); i++) {
         if (i === 0) continue; // Skip origin
         const x = centerX + i * scale.x;
         if (x < 0 || x > canvas.width) continue;
@@ -335,10 +372,11 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       // Y-axis units
       ctx.textAlign = 'right';
       ctx.textBaseline = 'middle';
-      for (let i = Math.floor(bottomEdge); i <= Math.ceil(topEdge); i++) {
+      const unitsStartY = showOnlyPositive ? Math.max(0, Math.floor(bottomEdge)) : Math.floor(bottomEdge);
+      for (let i = unitsStartY; i <= Math.ceil(topEdge); i++) {
         if (i === 0) continue; // Skip origin
         const y = centerY - i * scale.y;
-        if (y < 0 || y > canvas.height) continue;
+        if (y < titleOffset || y > canvas.height) continue; // Skip if in title area or below canvas
 
         // Draw tick mark
         ctx.beginPath();
@@ -355,7 +393,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       ctx.textBaseline = 'top';
       ctx.fillText('0', centerX - 5, centerY + 5);
     }
-  }, [showGrid, showAxisUnits, scale, panOffset, getTitleOffset]);
+  }, [showGrid, showAxisUnits, showOnlyPositive, scale, panOffset, getTitleOffset]);
 
   // Render all labels (axis labels, title, element labels, text boxes)
   const renderLabels = useCallback((ctx: CanvasRenderingContext2D) => {
@@ -392,12 +430,23 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
 
     if (labels.axisLabels.yLabel && centerX >= 0 && centerX <= canvas.width) {
       ctx.save();
+
+      // Clip the Y-axis label to not overlap with the title area
+      ctx.beginPath();
+      ctx.rect(0, titleOffset, canvas.width, canvas.height - titleOffset);
+      ctx.clip();
+
       ctx.fillStyle = labels.axisLabels.color;
       ctx.font = `${labels.axisLabels.fontSize}px ${labels.axisLabels.fontFamily}`;
+
+      // Use 'right' alignment so the last letter is at the anchor and text extends downward
       ctx.textAlign = 'right';
-      ctx.textBaseline = 'bottom';
-      // Position at the top of the Y-axis, to the left of the axis units
-      ctx.translate(centerX - 20, titleOffset + 10);
+      ctx.textBaseline = 'top';
+
+      // Position with enough space from the top
+      const yPosition = Math.max(titleOffset, labels.axisLabels.fontSize + 10);
+      // Move further from the axis (increased from -20 to -35)
+      ctx.translate(centerX - 35, yPosition);
       ctx.rotate(-Math.PI / 2);
       ctx.fillText(labels.axisLabels.yLabel, 0, 0);
       ctx.restore();
@@ -452,7 +501,43 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       ctx.restore();
     });
 
-    // 4. Text boxes
+    // 4. Intersection labels
+    labels.intersectionLabels.forEach((label, index) => {
+      const intersection = intersectionPoints[label.intersectionIndex];
+      if (!intersection || intersection.visible === false) return;
+
+      const canvasPoint = graphToCanvas(intersection.point.x, intersection.point.y);
+      const labelX = canvasPoint.x + label.offsetX;
+      const labelY = canvasPoint.y + label.offsetY;
+
+      ctx.save();
+
+      // Show selection highlight if this label is selected
+      if (selectedIntersectionLabelIndex === index) {
+        ctx.font = `${label.fontSize}px ${label.fontFamily}`;
+        const textMetrics = ctx.measureText(label.text);
+        const textWidth = textMetrics.width;
+        const textHeight = label.fontSize;
+
+        // Draw background
+        ctx.fillStyle = 'rgba(230, 126, 34, 0.2)';
+        ctx.fillRect(labelX - 2, labelY - textHeight - 2, textWidth + 4, textHeight + 4);
+
+        // Draw border
+        ctx.strokeStyle = '#E67E22';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(labelX - 2, labelY - textHeight - 2, textWidth + 4, textHeight + 4);
+      }
+
+      ctx.fillStyle = label.color;
+      ctx.font = `${label.fontSize}px ${label.fontFamily}`;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(label.text, labelX, labelY);
+      ctx.restore();
+    });
+
+    // 5. Text boxes
     labels.textBoxes.forEach(textBox => {
       let x = textBox.x;
       let y = textBox.y;
@@ -588,6 +673,40 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     }
     return null;
   }, [labels.elementLabels, isPointInElementLabel]);
+
+  // Helper function to check if a point is inside an intersection label
+  const isPointInIntersectionLabel = useCallback((canvasX: number, canvasY: number, label: IntersectionLabel, index: number): boolean => {
+    const intersection = intersectionPoints[label.intersectionIndex];
+    if (!intersection || intersection.visible === false) return false;
+
+    const canvasPoint = graphToCanvas(intersection.point.x, intersection.point.y);
+    const labelX = canvasPoint.x + label.offsetX;
+    const labelY = canvasPoint.y + label.offsetY;
+
+    const ctx = canvasRef.current?.getContext('2d');
+    if (!ctx) return false;
+
+    ctx.font = `${label.fontSize}px ${label.fontFamily}`;
+    const textMetrics = ctx.measureText(label.text);
+    const textWidth = textMetrics.width;
+    const textHeight = label.fontSize;
+
+    return canvasX >= labelX - 2 &&
+           canvasX <= labelX + textWidth + 2 &&
+           canvasY >= labelY - textHeight - 2 &&
+           canvasY <= labelY + 2;
+  }, [intersectionPoints, graphToCanvas]);
+
+  // Helper function to find which intersection label was clicked
+  const findClickedIntersectionLabel = useCallback((canvasX: number, canvasY: number): number | null => {
+    // Iterate in reverse order to prioritize top-most labels
+    for (let i = labels.intersectionLabels.length - 1; i >= 0; i--) {
+      if (isPointInIntersectionLabel(canvasX, canvasY, labels.intersectionLabels[i], i)) {
+        return i;
+      }
+    }
+    return null;
+  }, [labels.intersectionLabels, isPointInIntersectionLabel]);
 
   // Helper function to apply line style and opacity
   // Draw a line element
@@ -1883,6 +2002,19 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       }
     }
 
+    // Check for intersection label clicks (works in all modes)
+    const clickedIntersectionLabelIndex = findClickedIntersectionLabel(canvasX, canvasY);
+    if (clickedIntersectionLabelIndex !== null) {
+      setSelectedIntersectionLabelIndex(clickedIntersectionLabelIndex);
+      setDraggingIntersectionLabel(clickedIntersectionLabelIndex);
+      // Save current labels state for undo
+      labelsDragStartRef.current = { ...labels };
+      return;
+    } else if (drawMode !== 'textbox') {
+      // Clear intersection label selection if clicking elsewhere (but not in textbox mode)
+      setSelectedIntersectionLabelIndex(null);
+    }
+
     // Check for element label clicks (works in all modes)
     const clickedElementLabelIndex = findClickedElementLabel(canvasX, canvasY);
     if (clickedElementLabelIndex !== null) {
@@ -2174,6 +2306,31 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       return;
     }
 
+    // Handle intersection label dragging
+    if (draggingIntersectionLabel !== null) {
+      const label = labels.intersectionLabels[draggingIntersectionLabel];
+      if (label) {
+        const intersection = intersectionPoints[label.intersectionIndex];
+        if (intersection && intersection.visible !== false) {
+          const canvasPoint = graphToCanvas(intersection.point.x, intersection.point.y);
+
+          // Calculate new offset
+          const newOffsetX = canvasX - canvasPoint.x;
+          const newOffsetY = canvasY - canvasPoint.y;
+
+          setLabels(prev => ({
+            ...prev,
+            intersectionLabels: prev.intersectionLabels.map((lbl, idx) =>
+              idx === draggingIntersectionLabel
+                ? { ...lbl, offsetX: newOffsetX, offsetY: newOffsetY }
+                : lbl
+            )
+          }));
+        }
+      }
+      return;
+    }
+
     // Handle element label dragging
     if (draggingElementLabel !== null) {
       const label = labels.elementLabels[draggingElementLabel];
@@ -2307,6 +2464,22 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       setRedoHistory([]);
       setDraggingTextBox(null);
       setResizingTextBox(null);
+
+      // Notify parent component
+      if (onLabelsChange) {
+        onLabelsChange(labels);
+      }
+      return;
+    }
+
+    // Handle intersection label drag completion
+    if (draggingIntersectionLabel !== null) {
+      if (labelsDragStartRef.current) {
+        setActionHistory(prev => [...prev, { type: 'label', previousState: labelsDragStartRef.current! }]);
+        setRedoHistory([]);
+        labelsDragStartRef.current = null;
+      }
+      setDraggingIntersectionLabel(null);
 
       // Notify parent component
       if (onLabelsChange) {

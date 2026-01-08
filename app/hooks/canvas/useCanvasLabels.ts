@@ -17,6 +17,10 @@ export interface UseCanvasLabelsReturn {
   setSelectedElementLabelIndex: React.Dispatch<React.SetStateAction<number | null>>;
   draggingElementLabel: number | null;
   setDraggingElementLabel: React.Dispatch<React.SetStateAction<number | null>>;
+  selectedIntersectionLabelIndex: number | null;
+  setSelectedIntersectionLabelIndex: React.Dispatch<React.SetStateAction<number | null>>;
+  draggingIntersectionLabel: number | null;
+  setDraggingIntersectionLabel: React.Dispatch<React.SetStateAction<number | null>>;
   labelsDragStartRef: React.MutableRefObject<GraphLabels | null>;
 }
 
@@ -30,6 +34,8 @@ export function useCanvasLabels(): UseCanvasLabelsReturn {
   const [textBoxDragOffset, setTextBoxDragOffset] = useState<Point>({ x: 0, y: 0 });
   const [selectedElementLabelIndex, setSelectedElementLabelIndex] = useState<number | null>(null);
   const [draggingElementLabel, setDraggingElementLabel] = useState<number | null>(null);
+  const [selectedIntersectionLabelIndex, setSelectedIntersectionLabelIndex] = useState<number | null>(null);
+  const [draggingIntersectionLabel, setDraggingIntersectionLabel] = useState<number | null>(null);
   const labelsDragStartRef = useRef<GraphLabels | null>(null);
 
   return {
@@ -45,6 +51,10 @@ export function useCanvasLabels(): UseCanvasLabelsReturn {
     setSelectedElementLabelIndex,
     draggingElementLabel,
     setDraggingElementLabel,
+    selectedIntersectionLabelIndex,
+    setSelectedIntersectionLabelIndex,
+    draggingIntersectionLabel,
+    setDraggingIntersectionLabel,
     labelsDragStartRef
   };
 }
