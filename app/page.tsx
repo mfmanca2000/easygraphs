@@ -68,6 +68,7 @@ export default function Home() {
   } | null>(null);
   const [showAddLabelModal, setShowAddLabelModal] = useState(false);
   const [labelModalElementId, setLabelModalElementId] = useState<number | null>(null);
+  const [labelModalIntersectionIndex, setLabelModalIntersectionIndex] = useState<number | null>(null);
   const [axisContextMenu, setAxisContextMenu] = useState<{
     axis: 'x' | 'y';
     x: number;
@@ -596,13 +597,43 @@ export default function Home() {
     handleCloseAxisContextMenu();
   };
 
+  const handleOpenAddIntersectionLabelModal = (intersectionIndex: number) => {
+    setLabelModalIntersectionIndex(intersectionIndex);
+    setShowAddLabelModal(true);
+    handleCloseIntersectionContextMenu();
+  };
+
   const handleCloseAddLabelModal = () => {
     setShowAddLabelModal(false);
     setLabelModalElementId(null);
+    setLabelModalIntersectionIndex(null);
   };
 
   const handleAddLabel = (text: string) => {
-    if (labelModalElementId === null || !canvasRef.current) return;
+    if (!canvasRef.current) return;
+
+    // Check if this is an intersection label
+    if (labelModalIntersectionIndex !== null) {
+      const intersection = intersectionPoints[labelModalIntersectionIndex];
+      if (intersection) {
+        const newLabel: IntersectionLabel = {
+          intersectionIndex: labelModalIntersectionIndex,
+          text: text,
+          offsetX: 10,
+          offsetY: -10,
+          fontFamily: 'DM Sans, sans-serif',
+          fontSize: 14,
+          color: '#9B59B6'
+        };
+        handleLabelsChange({
+          ...labels,
+          intersectionLabels: [...labels.intersectionLabels, newLabel]
+        }, true);
+      }
+      return;
+    }
+
+    if (labelModalElementId === null) return;
 
     // Check if this is an axis label (special IDs: -1 for x-axis, -2 for y-axis)
     if (labelModalElementId === -1 || labelModalElementId === -2) {
@@ -1233,31 +1264,7 @@ export default function Home() {
             </button>
             <button
               onClick={() => {
-                const intersection = intersectionPoints[intersectionContextMenu.intersectionIndex];
-                if (intersection) {
-                  // Check if a label already exists for this intersection
-                  const existingLabelIndex = labels.intersectionLabels.findIndex(
-                    l => l.intersectionIndex === intersectionContextMenu.intersectionIndex
-                  );
-
-                  if (existingLabelIndex === -1) {
-                    // Add new label
-                    const newLabel: IntersectionLabel = {
-                      intersectionIndex: intersectionContextMenu.intersectionIndex,
-                      text: `(${intersection.point.x.toFixed(2)}, ${intersection.point.y.toFixed(2)})`,
-                      offsetX: 10,
-                      offsetY: -10,
-                      fontFamily: 'DM Sans, sans-serif',
-                      fontSize: 14,
-                      color: '#9B59B6'
-                    };
-                    handleLabelsChange({
-                      ...labels,
-                      intersectionLabels: [...labels.intersectionLabels, newLabel]
-                    }, true);
-                  }
-                }
-                handleCloseIntersectionContextMenu();
+                handleOpenAddIntersectionLabelModal(intersectionContextMenu.intersectionIndex);
               }}
               className="w-full px-4 py-2 text-left text-sm font-medium transition-all hover:bg-opacity-10"
               style={{
@@ -1381,6 +1388,7 @@ export default function Home() {
         onClose={handleCloseAddLabelModal}
         onAddLabel={handleAddLabel}
         elementId={labelModalElementId ?? 0}
+        intersectionIndex={labelModalIntersectionIndex}
       />
 
       {/* Character Palette Modal */}

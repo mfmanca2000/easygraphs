@@ -7,17 +7,22 @@ interface AddLabelModalProps {
   onClose: () => void;
   onAddLabel: (text: string) => void;
   elementId: number;
+  intersectionIndex?: number | null;
 }
 
-export default function AddLabelModal({ isOpen, onClose, onAddLabel, elementId }: AddLabelModalProps) {
+export default function AddLabelModal({ isOpen, onClose, onAddLabel, elementId, intersectionIndex }: AddLabelModalProps) {
   const [labelText, setLabelText] = useState('');
 
   if (!isOpen) return null;
 
-  // Determine if this is an axis label
+  // Determine the type of label
+  const isIntersectionLabel = intersectionIndex !== null && intersectionIndex !== undefined;
   const isAxisLabel = elementId === -1 || elementId === -2;
   const isXAxis = elementId === -1;
-  const modalTitle = isAxisLabel
+
+  const modalTitle = isIntersectionLabel
+    ? `Add Label to Intersection #${intersectionIndex}`
+    : isAxisLabel
     ? (isXAxis ? 'Add Label to X-Axis' : 'Add Label to Y-Axis')
     : 'Add Label to Element';
 
