@@ -53,6 +53,8 @@ import {
   findClickedFillArea,
   resolvePointCoordinates,
   traceBoundaryPath,
+  drawBoundaryEditor,
+  findClickedBoundaryVertex,
   type BoundaryPoint,
   type FillArea as NewFillArea
 } from '@/app/utils/canvas/fillArea';
@@ -204,7 +206,12 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     resetFillTool,
     setHoveredPoint,
     addBoundaryPoint,
-    completeFill
+    completeFill,
+    boundaryEditState,
+    startEditingBoundary,
+    stopEditingBoundary,
+    setHoveredVertex,
+    selectVertex
   } = useCanvasFill();
 
   // Calculate title offset (space reserved at top for title)
@@ -1289,6 +1296,22 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       drawFillPreview(ctx);
     }
 
+    // Draw boundary editor if in edit mode
+    if (boundaryEditState.mode === 'editing' && boundaryEditState.editingFillAreaId) {
+      const editingFillArea = fillAreas.find(fa => (fa as unknown as NewFillArea).id === boundaryEditState.editingFillAreaId);
+      if (editingFillArea) {
+        drawBoundaryEditor(
+          ctx,
+          editingFillArea as unknown as NewFillArea,
+          elements,
+          intersectionPoints,
+          graphToCanvas,
+          boundaryEditState.hoveredVertexIndex,
+          boundaryEditState.selectedVertexIndex
+        );
+      }
+    }
+
     // Draw global intersection markers if enabled
     if (showIntersections && intersectionPoints.length > 0) {
       intersectionPoints.forEach((intersection) => {
@@ -1352,7 +1375,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
         }
       });
     }
-  }, [drawGrid, elements, fillAreas, currentPoints, tempControlPoint, tempControlPoint2, curveType, isDrawing, drawMode, strokeColor, strokeWidth, graphToCanvas, drawLine, drawBezier, drawFreehand, drawPoint, drawFunction, selection, selectionBox, isDrawingSelectionBox, simplifyPointsUtil, renderLabels, groups, showIntersections, intersectionPoints, drawFillPreview, fillToolState]);
+  }, [drawGrid, elements, fillAreas, currentPoints, tempControlPoint, tempControlPoint2, curveType, isDrawing, drawMode, strokeColor, strokeWidth, graphToCanvas, drawLine, drawBezier, drawFreehand, drawPoint, drawFunction, selection, selectionBox, isDrawingSelectionBox, simplifyPointsUtil, renderLabels, groups, showIntersections, intersectionPoints, drawFillPreview, fillToolState, boundaryEditState]);
 
   // Re-render when dependencies change
   useEffect(() => {
@@ -3945,6 +3968,12 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       // Only fill creation via fill tool is tracked in action history
       setRedoHistory([]);
     },
+    startEditingFillBoundary: (fillAreaId: string) => {
+      startEditingBoundary(fillAreaId);
+    },
+    stopEditingFillBoundary: () => {
+      stopEditingBoundary();
+    },
     resetPanOffset: () => {
       const canvas = canvasRef.current;
       if (!canvas) return;
@@ -3966,7 +3995,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       console.log('[Reset Button] Current panOffset before set:', panOffset.x, ',', panOffset.y);
       setPanOffset(defaultPanOffset);
     }
-  }), [addLineByCoordinates, addPointByCoordinates, addFunction, clearCanvas, undo, redo, elements, exportToPNG, exportToJPEG, exportToPDF, getSelectedElement, getSelectedElementId, updateSelectedElement, addModifyAction, getExportData, importData, togglePointProjection, calculateAllIntersections, getLabels, updateLabels, addTextBox, deleteTextBox, selectTextBox, handleCopy, handlePaste, handleDelete, selection, handleGroup, handleUngroup, groups, fillAreas, scale, getTitleOffset]);
+  }), [addLineByCoordinates, addPointByCoordinates, addFunction, clearCanvas, undo, redo, elements, exportToPNG, exportToJPEG, exportToPDF, getSelectedElement, getSelectedElementId, updateSelectedElement, addModifyAction, getExportData, importData, togglePointProjection, calculateAllIntersections, getLabels, updateLabels, addTextBox, deleteTextBox, selectTextBox, handleCopy, handlePaste, handleDelete, selection, handleGroup, handleUngroup, groups, fillAreas, scale, getTitleOffset, startEditingBoundary, stopEditingBoundary]);
 
   return (
     <canvas

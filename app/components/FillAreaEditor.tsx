@@ -8,6 +8,7 @@ export interface FillAreaEditorProps {
   onColorChange: (index: number, color: string) => void;
   onOpacityChange: (index: number, opacity: number) => void;
   onDelete: (index: number) => void;
+  onEditBoundary?: (fillAreaId: string) => void;
 }
 
 const PRESET_FILL_COLORS = [
@@ -19,7 +20,8 @@ export default function FillAreaEditor({
   fillAreas,
   onColorChange,
   onOpacityChange,
-  onDelete
+  onDelete,
+  onEditBoundary
 }: FillAreaEditorProps) {
 
   if (fillAreas.length === 0) {
@@ -78,16 +80,30 @@ export default function FillAreaEditor({
                 </div>
               </div>
             </div>
-            <button
-              onClick={() => onDelete(index)}
-              className="px-3 py-1.5 rounded-md text-xs font-medium transition-all hover:bg-red-50"
-              style={{
-                color: '#E74C3C',
-                border: '1px solid #E74C3C'
-              }}
-            >
-              Delete
-            </button>
+            <div className="flex gap-2">
+              {onEditBoundary && (
+                <button
+                  onClick={() => onEditBoundary(fillArea.id)}
+                  className="px-3 py-1.5 rounded-md text-xs font-medium transition-all hover:bg-blue-50"
+                  style={{
+                    color: '#3498db',
+                    border: '1px solid #3498db'
+                  }}
+                >
+                  Edit Boundary
+                </button>
+              )}
+              <button
+                onClick={() => onDelete(index)}
+                className="px-3 py-1.5 rounded-md text-xs font-medium transition-all hover:bg-red-50"
+                style={{
+                  color: '#E74C3C',
+                  border: '1px solid #E74C3C'
+                }}
+              >
+                Delete
+              </button>
+            </div>
           </div>
 
           {/* Color Picker */}

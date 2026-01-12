@@ -10,12 +10,26 @@ export interface FillToolState {
   hoveredPoint: BoundaryPoint | null;
 }
 
+export interface BoundaryEditState {
+  mode: 'idle' | 'editing';
+  editingFillAreaId: string | null;
+  selectedVertexIndex: number | null;
+  hoveredVertexIndex: number | null;
+}
+
 export function useCanvasFill() {
   const [fillToolState, setFillToolState] = useState<FillToolState>({
     mode: 'idle',
     currentBoundary: [],
     previewSegments: [],
     hoveredPoint: null
+  });
+
+  const [boundaryEditState, setBoundaryEditState] = useState<BoundaryEditState>({
+    mode: 'idle',
+    editingFillAreaId: null,
+    selectedVertexIndex: null,
+    hoveredVertexIndex: null
   });
 
   const resetFillTool = useCallback(() => {
@@ -55,11 +69,49 @@ export function useCanvasFill() {
     return boundary;
   }, [fillToolState.currentBoundary, resetFillTool]);
 
+  // Boundary editing functions
+  const startEditingBoundary = useCallback((fillAreaId: string) => {
+    setBoundaryEditState({
+      mode: 'editing',
+      editingFillAreaId: fillAreaId,
+      selectedVertexIndex: null,
+      hoveredVertexIndex: null
+    });
+  }, []);
+
+  const stopEditingBoundary = useCallback(() => {
+    setBoundaryEditState({
+      mode: 'idle',
+      editingFillAreaId: null,
+      selectedVertexIndex: null,
+      hoveredVertexIndex: null
+    });
+  }, []);
+
+  const setHoveredVertex = useCallback((index: number | null) => {
+    setBoundaryEditState(prev => ({
+      ...prev,
+      hoveredVertexIndex: index
+    }));
+  }, []);
+
+  const selectVertex = useCallback((index: number | null) => {
+    setBoundaryEditState(prev => ({
+      ...prev,
+      selectedVertexIndex: index
+    }));
+  }, []);
+
   return {
     fillToolState,
     resetFillTool,
     setHoveredPoint,
     addBoundaryPoint,
-    completeFill
+    completeFill,
+    boundaryEditState,
+    startEditingBoundary,
+    stopEditingBoundary,
+    setHoveredVertex,
+    selectVertex
   };
 }

@@ -109,4 +109,6 @@ export interface GraphCanvasHandle {
   getFillAreas: () => FillArea[];
   updateFillArea: (index: number, updates: Partial<FillArea>) => void;
   deleteFillArea: (index: number) => void;
+  startEditingFillBoundary: (fillAreaId: string) => void;
+  stopEditingFillBoundary: () => void;
 }

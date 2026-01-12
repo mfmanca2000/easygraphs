@@ -339,6 +339,14 @@ export default function Home() {
     }
   };
 
+  const handleEditBoundary = (fillAreaId: string) => {
+    if (canvasRef.current) {
+      canvasRef.current.startEditingFillBoundary(fillAreaId);
+      // Switch to select mode so user can see the boundary editor
+      setDrawMode('select');
+    }
+  };
+
   const handleFillAreasChange = (newFillAreas: FillArea[]) => {
     setFillAreas(newFillAreas);
   };
@@ -862,6 +870,7 @@ export default function Home() {
               onColorChange={handleFillColorChange}
               onOpacityChange={handleFillOpacityChange}
               onDelete={handleFillDelete}
+              onEditBoundary={handleEditBoundary}
             />
           </CollapsiblePanel>
 
@@ -955,6 +964,7 @@ export default function Home() {
                 onColorChange={handleFillColorChange}
                 onOpacityChange={handleFillOpacityChange}
                 onDelete={handleFillDelete}
+                onEditBoundary={handleEditBoundary}
               />
             </CollapsiblePanel>
 

@@ -352,6 +352,9 @@ export function traceBoundaryPath(
       const axisPoint = fromPoint.type === 'axisPoint' ? fromPoint : toPoint;
       const axisCoord = fromPoint.type === 'axisPoint' ? fromCoord : toCoord;
 
+      // TypeScript type guard - ensure axisPoint is actually an axisPoint
+      if (axisPoint.type !== 'axisPoint') return null;
+
       console.log('[Fill] Smart trace: Checking intersection ↔ axisPoint connection');
       console.log('[Fill] axisCoord:', axisCoord, 'axisPoint.axis:', axisPoint.axis, 'axisPoint.position:', axisPoint.position);
 
@@ -770,6 +773,95 @@ export function findClickedFillArea(
       // Skip invalid fill areas
       continue;
     }
+  }
+
+  return null;
+}
+
+/**
+ * Draw boundary editor handles for a fill area
+ */
+export function drawBoundaryEditor(
+  ctx: CanvasRenderingContext2D,
+  fillArea: FillArea,
+  elements: GraphElement[],
+  intersections: IntersectionPoint[],
+  graphToCanvas: GraphToCanvasFunc,
+  hoveredVertexIndex: number | null,
+  selectedVertexIndex: number | null
+): void {
+  try {
+    // Draw handles at each boundary point
+    fillArea.boundaryPoints.forEach((bp, index) => {
+      const coord = resolvePointCoordinates(bp, elements, intersections);
+      const canvas = graphToCanvas(coord.x, coord.y);
+
+      ctx.save();
+
+      // Determine handle appearance
+      const isHovered = hoveredVertexIndex === index;
+      const isSelected = selectedVertexIndex === index;
+
+      // Draw handle circle
+      ctx.beginPath();
+      ctx.arc(canvas.x, canvas.y, isHovered || isSelected ? 8 : 6, 0, 2 * Math.PI);
+
+      if (isSelected) {
+        ctx.fillStyle = '#3498db'; // Blue for selected
+        ctx.strokeStyle = '#2980b9';
+      } else if (isHovered) {
+        ctx.fillStyle = '#f39c12'; // Orange for hovered
+        ctx.strokeStyle = '#e67e22';
+      } else {
+        ctx.fillStyle = 'white';
+        ctx.strokeStyle = '#3498db';
+      }
+
+      ctx.lineWidth = 2;
+      ctx.fill();
+      ctx.stroke();
+
+      // Draw vertex number
+      ctx.fillStyle = isSelected || isHovered ? 'white' : '#3498db';
+      ctx.font = 'bold 10px Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText((index + 1).toString(), canvas.x, canvas.y);
+
+      ctx.restore();
+    });
+  } catch (error) {
+    console.error('Error drawing boundary editor:', error);
+  }
+}
+
+/**
+ * Find boundary vertex near click point
+ */
+export function findClickedBoundaryVertex(
+  clickCanvas: Point,
+  fillArea: FillArea,
+  elements: GraphElement[],
+  intersections: IntersectionPoint[],
+  graphToCanvas: GraphToCanvasFunc,
+  threshold: number = 10
+): number | null {
+  try {
+    for (let i = 0; i < fillArea.boundaryPoints.length; i++) {
+      const bp = fillArea.boundaryPoints[i];
+      const coord = resolvePointCoordinates(bp, elements, intersections);
+      const canvas = graphToCanvas(coord.x, coord.y);
+
+      const dist = Math.sqrt(
+        Math.pow(canvas.x - clickCanvas.x, 2) + Math.pow(canvas.y - clickCanvas.y, 2)
+      );
+
+      if (dist < threshold) {
+        return i;
+      }
+    }
+  } catch (error) {
+    // Ignore errors
   }
 
   return null;
