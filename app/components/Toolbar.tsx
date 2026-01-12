@@ -68,7 +68,7 @@ export default function Toolbar({
             Mode
           </label>
           <div className="grid grid-cols-2 gap-2">
-            {(['select', 'point', 'line', 'bezier', 'freehand', 'function', 'textbox'] as DrawMode[]).map((mode) => (
+            {(['select', 'point', 'line', 'bezier', 'freehand', 'function', 'fill', 'textbox'] as DrawMode[]).map((mode) => (
               <button
                 key={mode}
                 onClick={() => onDrawModeChange(mode)}
@@ -85,6 +85,7 @@ export default function Toolbar({
                  mode === 'bezier' ? '∿ Curve' :
                  mode === 'freehand' ? '✎ Freehand' :
                  mode === 'function' ? 'ƒ(x) Function' :
+                 mode === 'fill' ? '■ Fill' :
                  mode === 'textbox' ? '□ Text Box' :
                  mode}
               </button>

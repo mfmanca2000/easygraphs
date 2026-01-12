@@ -8,3 +8,4 @@ export * from './useCanvasPanning';
 export * from './useCanvasLabels';
 export * from './useCanvasGroups';
 export * from './useCanvasClipboard';
+export * from './useCanvasFill';

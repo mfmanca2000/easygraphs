@@ -1,6 +1,6 @@
 // Action and history types for undo/redo
 
-import type { GraphElement } from './elements';
+import type { GraphElement, FillArea } from './elements';
 import type { GraphLabels, TextBox } from './labels';
 import type { Group } from './state';
 

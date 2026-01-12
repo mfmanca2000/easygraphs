@@ -9,6 +9,7 @@ import type {
   Point,
   GraphElement,
   FillArea,
+  FillAreaLegacy,
   IntersectionPoint,
   GraphLabels,
   SelectionState,
@@ -48,6 +49,14 @@ import {
   wrapText
 } from '@/app/utils/canvas';
 import {
+  renderFillArea,
+  findClickedFillArea,
+  resolvePointCoordinates,
+  traceBoundaryPath,
+  type BoundaryPoint,
+  type FillArea as NewFillArea
+} from '@/app/utils/canvas/fillArea';
+import {
   useCanvasElements,
   useCanvasDrawing,
   useCanvasSelection,
@@ -55,7 +64,8 @@ import {
   useCanvasPanning,
   useCanvasLabels,
   useCanvasGroups,
-  useCanvasClipboard
+  useCanvasClipboard,
+  useCanvasFill
 } from '@/app/hooks/canvas';
 
 const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function GraphCanvasComponent(props, ref) {
@@ -81,9 +91,11 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     onElementsChange,
     onScaleChange,
     onLabelsChange,
+    onFillAreasChange,
     onIntersectionContextMenu,
     onElementContextMenu,
-    onAxisContextMenu
+    onAxisContextMenu,
+    onFillAreaContextMenu
   } = props;
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -186,6 +198,14 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     clipboard,
     setClipboard
   } = useCanvasClipboard();
+
+  const {
+    fillToolState,
+    resetFillTool,
+    setHoveredPoint,
+    addBoundaryPoint,
+    completeFill
+  } = useCanvasFill();
 
   // Calculate title offset (space reserved at top for title)
   const getTitleOffset = useCallback((): number => {
@@ -735,137 +755,127 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     drawFunctionElement(ctx, element, graphToCanvas);
   }, [graphToCanvas]);
 
-  // Fill area above or below a curve
-  const fillAreaForElement = useCallback((ctx: CanvasRenderingContext2D, elementId: number, fillAbove: boolean, color: string, fillToAxis: boolean = false) => {
-    const element = elements[elementId];
-    if (!element) return;
+  // Find hovered boundary point in fill mode
+  const findHoveredBoundaryPoint = useCallback((canvasX: number, canvasY: number): BoundaryPoint | null => {
+    const HOVER_THRESHOLD = 15; // pixels
 
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+    // Check intersections first (if visible)
+    if (showIntersections) {
+      for (let i = 0; i < intersectionPoints.length; i++) {
+        const intersection = intersectionPoints[i];
+        if (intersection.visible === false) continue;
 
-    const titleOffset = getTitleOffset();
-    const centerY = (canvas.height + titleOffset) / 2 + panOffset.y;
+        const canvas = graphToCanvas(intersection.point.x, intersection.point.y);
+        const dist = Math.sqrt(
+          Math.pow(canvas.x - canvasX, 2) + Math.pow(canvas.y - canvasY, 2)
+        );
 
-    // Save canvas state for clipping
-    ctx.save();
-
-    ctx.fillStyle = color;
-    // Multiply fill opacity (0.3) with element opacity
-    const elementOpacity = element.opacity ?? 1;
-    ctx.globalAlpha = 0.3 * elementOpacity;
-
-    // If filling to axis, clip to only the relevant half
-    if (fillToAxis) {
-      ctx.beginPath();
-      if (fillAbove) {
-        // "Above" means fill between negative Y values and x-axis
-        // Clip to bottom half of canvas (below x-axis)
-        ctx.rect(0, centerY, canvas.width, canvas.height - centerY);
-      } else {
-        // "Below" means fill between positive Y values and x-axis
-        // Clip to top half of canvas (above x-axis)
-        ctx.rect(0, 0, canvas.width, centerY);
-      }
-      ctx.clip();
-    }
-
-    ctx.beginPath();
-
-    if (element.type === 'line') {
-      const start = graphToCanvas(element.points[0].x, element.points[0].y);
-      const end = graphToCanvas(element.points[1].x, element.points[1].y);
-
-      ctx.moveTo(start.x, start.y);
-      ctx.lineTo(end.x, end.y);
-
-      if (fillToAxis) {
-        // Always fill to x-axis when fillToAxis is true
-        ctx.lineTo(end.x, centerY);
-        ctx.lineTo(start.x, centerY);
-      } else {
-        // Original behavior - fill to canvas edge
-        if (fillAbove) {
-          ctx.lineTo(end.x, 0);
-          ctx.lineTo(start.x, 0);
-        } else {
-          ctx.lineTo(end.x, canvas.height);
-          ctx.lineTo(start.x, canvas.height);
-        }
-      }
-    } else if (element.type === 'bezier' && element.controlPoint) {
-      const start = graphToCanvas(element.points[0].x, element.points[0].y);
-      const end = graphToCanvas(element.points[1].x, element.points[1].y);
-      const control = graphToCanvas(element.controlPoint.x, element.controlPoint.y);
-
-      ctx.moveTo(start.x, start.y);
-      ctx.quadraticCurveTo(control.x, control.y, end.x, end.y);
-
-      if (fillToAxis) {
-        // Always fill to x-axis when fillToAxis is true
-        ctx.lineTo(end.x, centerY);
-        ctx.lineTo(start.x, centerY);
-      } else {
-        // Original behavior - fill to canvas edge
-        if (fillAbove) {
-          ctx.lineTo(end.x, 0);
-          ctx.lineTo(start.x, 0);
-        } else {
-          ctx.lineTo(end.x, canvas.height);
-          ctx.lineTo(start.x, canvas.height);
-        }
-      }
-    } else if (element.type === 'freehand' || element.type === 'function') {
-      // Use simplified points and Catmull-Rom spline for fill areas too
-      const simplified = simplifyPointsUtil(element.points, 0.05);
-      const canvasPoints = simplified.map(p => graphToCanvas(p.x, p.y));
-
-      ctx.moveTo(canvasPoints[0].x, canvasPoints[0].y);
-
-      if (canvasPoints.length === 2) {
-        ctx.lineTo(canvasPoints[1].x, canvasPoints[1].y);
-      } else if (canvasPoints.length > 2) {
-        // Catmull-Rom spline
-        const tension = 0.5;
-
-        for (let i = 0; i < canvasPoints.length - 1; i++) {
-          const p0 = canvasPoints[i === 0 ? 0 : i - 1];
-          const p1 = canvasPoints[i];
-          const p2 = canvasPoints[i + 1];
-          const p3 = canvasPoints[i + 2] || p2;
-
-          const cp1x = p1.x + (p2.x - p0.x) / 6 * tension;
-          const cp1y = p1.y + (p2.y - p0.y) / 6 * tension;
-          const cp2x = p2.x - (p3.x - p1.x) / 6 * tension;
-          const cp2y = p2.y - (p3.y - p1.y) / 6 * tension;
-
-          ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y);
-        }
-      }
-
-      const last = canvasPoints[canvasPoints.length - 1];
-
-      if (fillToAxis) {
-        // Always fill to x-axis when fillToAxis is true
-        ctx.lineTo(last.x, centerY);
-        ctx.lineTo(canvasPoints[0].x, centerY);
-      } else {
-        // Original behavior - fill to canvas edge
-        if (fillAbove) {
-          ctx.lineTo(last.x, 0);
-          ctx.lineTo(canvasPoints[0].x, 0);
-        } else {
-          ctx.lineTo(last.x, canvas.height);
-          ctx.lineTo(canvasPoints[0].x, canvas.height);
+        if (dist < HOVER_THRESHOLD) {
+          return { type: 'intersection', intersectionIndex: i };
         }
       }
     }
 
-    ctx.closePath();
-    ctx.fill();
+    // Check element endpoints
+    for (let i = 0; i < elements.length; i++) {
+      const element = elements[i];
+      if (element.type === 'point') continue;
 
-    // Restore canvas state (remove clipping and reset globalAlpha)
-    ctx.restore();
-  }, [elements, graphToCanvas, panOffset, simplifyPointsUtil, getTitleOffset]);
+      // Check start and end points
+      const pointsToCheck = [0, element.points.length - 1];
+      for (const pointIndex of pointsToCheck) {
+        const point = element.points[pointIndex];
+        const canvas = graphToCanvas(point.x, point.y);
+        const dist = Math.sqrt(
+          Math.pow(canvas.x - canvasX, 2) + Math.pow(canvas.y - canvasY, 2)
+        );
+
+        if (dist < HOVER_THRESHOLD) {
+          return { type: 'elementPoint', elementId: i, pointIndex };
+        }
+      }
+    }
+
+    // Check axis points (if near axis)
+    const graph = canvasToGraph(canvasX, canvasY);
+    const AXIS_THRESHOLD = 0.2; // graph units
+
+    if (Math.abs(graph.y) < AXIS_THRESHOLD) {
+      return { type: 'axisPoint', axis: 'x', position: graph.x };
+    }
+    if (Math.abs(graph.x) < AXIS_THRESHOLD) {
+      return { type: 'axisPoint', axis: 'y', position: graph.y };
+    }
+
+    return null;
+  }, [showIntersections, intersectionPoints, elements, graphToCanvas, canvasToGraph]);
+
+  // Draw fill preview during boundary construction
+  const drawFillPreview = useCallback((ctx: CanvasRenderingContext2D) => {
+    if (fillToolState.currentBoundary.length === 0) return;
+
+    // Draw selected points as highlighted dots
+    fillToolState.currentBoundary.forEach((bp, index) => {
+      try {
+        const coord = resolvePointCoordinates(bp, elements, intersectionPoints);
+        const canvas = graphToCanvas(coord.x, coord.y);
+
+        // Draw larger circle with fill color preview
+        ctx.fillStyle = 'rgba(0, 150, 255, 0.5)';
+        ctx.beginPath();
+        ctx.arc(canvas.x, canvas.y, 8, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Draw sequence number
+        ctx.fillStyle = 'white';
+        ctx.font = '12px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText((index + 1).toString(), canvas.x, canvas.y);
+      } catch (error) {
+        // Skip invalid points
+      }
+    });
+
+    // Draw traced path segments
+    ctx.strokeStyle = 'rgba(0, 150, 255, 0.8)';
+    ctx.lineWidth = 3;
+    ctx.setLineDash([5, 5]);
+
+    fillToolState.previewSegments.forEach(segment => {
+      try {
+        const fromCoord = resolvePointCoordinates(segment.fromPoint, elements, intersectionPoints);
+        const toCoord = resolvePointCoordinates(segment.toPoint, elements, intersectionPoints);
+        const fromCanvas = graphToCanvas(fromCoord.x, fromCoord.y);
+        const toCanvas = graphToCanvas(toCoord.x, toCoord.y);
+
+        ctx.beginPath();
+        ctx.moveTo(fromCanvas.x, fromCanvas.y);
+        ctx.lineTo(toCanvas.x, toCanvas.y);
+        ctx.stroke();
+      } catch (error) {
+        // Skip invalid segments
+      }
+    });
+
+    ctx.setLineDash([]);
+
+    // Highlight hovered point
+    if (fillToolState.hoveredPoint) {
+      try {
+        const coord = resolvePointCoordinates(fillToolState.hoveredPoint, elements, intersectionPoints);
+        const canvas = graphToCanvas(coord.x, coord.y);
+
+        ctx.strokeStyle = 'orange';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(canvas.x, canvas.y, 10, 0, Math.PI * 2);
+        ctx.stroke();
+      } catch (error) {
+        // Skip invalid hovered point
+      }
+    }
+  }, [fillToolState, elements, intersectionPoints, graphToCanvas]);
 
   // Render everything
   const render = useCallback(() => {
@@ -880,11 +890,15 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     // Draw grid
     drawGrid(ctx);
 
-    // Draw fill areas first (below elements)
-    fillAreas.forEach(fillArea => {
-      // Only draw fills for elements that still exist
-      if (fillArea.elementId < elements.length) {
-        fillAreaForElement(ctx, fillArea.elementId, fillArea.fillAbove, fillArea.color, fillArea.fillToAxis || false);
+    // Draw fill areas first (below elements) - new boundary-based fills
+    fillAreas.forEach((fillArea) => {
+      const newFillArea = fillArea as unknown as NewFillArea;
+      if (newFillArea.boundaryPoints) {
+        try {
+          renderFillArea(ctx, newFillArea, elements, intersectionPoints, graphToCanvas);
+        } catch (error) {
+          console.error('Error rendering fill area:', error);
+        }
       }
     });
 
@@ -1270,6 +1284,11 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       ctx.setLineDash([]);
     });
 
+    // Draw fill preview if in fill mode
+    if (drawMode === 'fill') {
+      drawFillPreview(ctx);
+    }
+
     // Draw global intersection markers if enabled
     if (showIntersections && intersectionPoints.length > 0) {
       intersectionPoints.forEach((intersection) => {
@@ -1333,12 +1352,19 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
         }
       });
     }
-  }, [drawGrid, elements, fillAreas, currentPoints, tempControlPoint, tempControlPoint2, curveType, isDrawing, drawMode, strokeColor, strokeWidth, graphToCanvas, drawLine, drawBezier, drawFreehand, drawPoint, drawFunction, fillAreaForElement, selection, selectionBox, isDrawingSelectionBox, simplifyPointsUtil, renderLabels, groups, showIntersections, intersectionPoints]);
+  }, [drawGrid, elements, fillAreas, currentPoints, tempControlPoint, tempControlPoint2, curveType, isDrawing, drawMode, strokeColor, strokeWidth, graphToCanvas, drawLine, drawBezier, drawFreehand, drawPoint, drawFunction, selection, selectionBox, isDrawingSelectionBox, simplifyPointsUtil, renderLabels, groups, showIntersections, intersectionPoints, drawFillPreview, fillToolState]);
 
   // Re-render when dependencies change
   useEffect(() => {
     render();
   }, [render]);
+
+  // Notify parent when fill areas change
+  useEffect(() => {
+    if (onFillAreasChange) {
+      onFillAreasChange(fillAreas);
+    }
+  }, [fillAreas, onFillAreasChange]);
 
   // Initialize default pan offset when canvas dimensions change
   // This ensures the view is correctly positioned even after responsive layout changes
@@ -1641,6 +1667,17 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       }
     }
 
+    // Check for fill area click
+    const graph = canvasToGraph(canvasX, canvasY);
+    const fillAreaIndex = findClickedFillArea(graph, fillAreas, elements, intersectionPoints);
+    if (fillAreaIndex !== null && onFillAreaContextMenu) {
+      const rect = canvas.getBoundingClientRect();
+      if (rect) {
+        onFillAreaContextMenu(fillAreaIndex, e.clientX, e.clientY);
+        return;
+      }
+    }
+
     // Check for axis click (lowest priority)
     const clickedAxis = detectClickedAxis(canvasX, canvasY, canvas.width, canvas.height, panOffset, getTitleOffset());
     if (clickedAxis && onAxisContextMenu) {
@@ -1693,6 +1730,21 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
           if (rect) {
             onElementContextMenu(
               elementId,
+              touch.clientX,
+              touch.clientY
+            );
+            return;
+          }
+        }
+
+        // Check for fill area click
+        const graph = canvasToGraph(longPressPositionRef.current.x, longPressPositionRef.current.y);
+        const fillAreaIndex = findClickedFillArea(graph, fillAreas, elements, intersectionPoints);
+        if (fillAreaIndex !== null && onFillAreaContextMenu) {
+          const rect = canvas.getBoundingClientRect();
+          if (rect) {
+            onFillAreaContextMenu(
+              fillAreaIndex,
               touch.clientX,
               touch.clientY
             );
@@ -1877,6 +1929,82 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
 
     // Check if CTRL key is pressed
     const isCtrlPressed = 'ctrlKey' in e && e.ctrlKey;
+
+    // Handle fill mode clicks
+    if (drawMode === 'fill') {
+      const clickedPoint = findHoveredBoundaryPoint(canvasX, canvasY);
+
+      if (clickedPoint) {
+        if (fillToolState.currentBoundary.length > 0) {
+          // Check if clicking near the first point to close the boundary
+          const firstPoint = fillToolState.currentBoundary[0];
+          try {
+            const firstCoord = resolvePointCoordinates(firstPoint, elements, intersectionPoints);
+            const clickedCoord = resolvePointCoordinates(clickedPoint, elements, intersectionPoints);
+            const firstCanvas = graphToCanvas(firstCoord.x, firstCoord.y);
+            const dist = Math.sqrt(
+              Math.pow(firstCanvas.x - canvasX, 2) + Math.pow(firstCanvas.y - canvasY, 2)
+            );
+
+            // If within 15px of first point and we have at least 3 points, close the fill
+            if (dist < 15 && fillToolState.currentBoundary.length >= 3) {
+              // Trace final segment back to first point
+              const finalSegment = traceBoundaryPath(
+                fillToolState.currentBoundary[fillToolState.currentBoundary.length - 1],
+                firstPoint,
+                elements,
+                intersectionPoints
+              );
+
+              if (finalSegment) {
+                // Create fill area
+                const boundary = completeFill();
+
+                // Validate boundary has at least 3 points
+                if (boundary.length < 3) {
+                  console.warn('Fill boundary must have at least 3 points');
+                  return;
+                }
+
+                const newFillArea: NewFillArea = {
+                  id: crypto.randomUUID(),
+                  boundaryPoints: boundary,
+                  color: strokeColor,
+                  opacity: 0.3
+                };
+
+                setFillAreas(prev => [...prev, newFillArea as unknown as FillArea]);
+
+                // Add to undo history
+                setActionHistory(prev => [...prev, { type: 'fill' }]);
+                setRedoHistory([]);
+              }
+              return;
+            }
+          } catch (error) {
+            console.warn('Error checking boundary closure:', error);
+          }
+        }
+
+        // Add point to boundary
+        if (fillToolState.currentBoundary.length > 0) {
+          // Trace path from previous point
+          const previousPoint = fillToolState.currentBoundary[fillToolState.currentBoundary.length - 1];
+          const segment = traceBoundaryPath(previousPoint, clickedPoint, elements, intersectionPoints);
+
+          if (segment) {
+            addBoundaryPoint(clickedPoint, segment);
+          } else {
+            console.warn('No valid path found between points');
+          }
+        } else {
+          // First point - no segment yet
+          addBoundaryPoint(clickedPoint, null);
+        }
+      }
+
+      return; // Don't handle other interactions in fill mode
+    }
 
     // Track mouse down position and clicked element for drag threshold detection
     if (drawMode === 'select') {
@@ -2084,6 +2212,13 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
     const { x: canvasX, y: canvasY } = getCanvasCoordinates(e);
     const firstElementId = Array.from(selection.elementIds)[0];
+
+    // Handle fill mode hover detection
+    if (drawMode === 'fill') {
+      const hoveredPoint = findHoveredBoundaryPoint(canvasX, canvasY);
+      setHoveredPoint(hoveredPoint);
+      return; // Don't handle other interactions in fill mode
+    }
 
     // Check for drag threshold (5px movement to start dragging)
     if (mouseDownPosition && mouseDownOnElementId !== null && !draggingEntireElement) {
@@ -2603,12 +2738,6 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     setActionHistory(prev => [...prev, { type: 'element' }]);
     setRedoHistory([]);
   }, [strokeColor, strokeWidth, lineStyle, opacity]);
-
-  const addFillArea = useCallback((elementId: number, fillAbove: boolean, color: string, fillToAxis: boolean = false) => {
-    setFillAreas(prev => [...prev, { elementId, fillAbove, color, fillToAxis }]);
-    setActionHistory(prev => [...prev, { type: 'fill' }]);
-    setRedoHistory([]);
-  }, []);
 
   const addFunction = useCallback((formula: string, xMin: number, xMax: number, color: string, lineWidth: number, lineStyleParam?: 'solid' | 'dashed' | 'dotted', opacityParam?: number) => {
     try {
@@ -3415,6 +3544,51 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
 
     setGroups(newGroups);
 
+    // Update fill areas: remove fills that reference deleted elements
+    const newFillAreas = fillAreas.filter(fillArea => {
+      // Check if any boundary point references a deleted element
+      const fillAreaAsNew = fillArea as unknown as NewFillArea;
+      if (!fillAreaAsNew.boundaryPoints) return true; // Keep legacy fills (will be filtered on import)
+
+      for (const bp of fillAreaAsNew.boundaryPoints) {
+        if (bp.type === 'elementPoint') {
+          // Check if this element was deleted or if index needs adjustment
+          if (deletedIds.has(bp.elementId)) {
+            console.warn(`Removing fill area ${fillAreaAsNew.id} - references deleted element ${bp.elementId}`);
+            return false; // Remove this fill area
+          }
+        }
+      }
+      return true; // Keep this fill area
+    });
+
+    // Update element IDs in remaining fill areas (adjust indices)
+    const updatedFillAreas = newFillAreas.map(fillArea => {
+      const fillAreaAsNew = fillArea as unknown as NewFillArea;
+      if (!fillAreaAsNew.boundaryPoints) return fillArea;
+
+      const updatedBoundaryPoints = fillAreaAsNew.boundaryPoints.map(bp => {
+        if (bp.type === 'elementPoint') {
+          // Adjust element ID for deleted elements before it
+          const deletedBefore = Array.from(deletedIds).filter(delId => delId < bp.elementId).length;
+          return {
+            ...bp,
+            elementId: bp.elementId - deletedBefore
+          };
+        }
+        return bp;
+      });
+
+      // Clear cached segments since element IDs changed
+      return {
+        ...fillAreaAsNew,
+        boundaryPoints: updatedBoundaryPoints,
+        segments: undefined
+      } as unknown as FillArea;
+    });
+
+    setFillAreas(updatedFillAreas);
+
     // Clear selection
     setSelection({ elementIds: new Set(), textBoxIds: new Set() });
 
@@ -3535,9 +3709,38 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     setCurrentPoints([]);
     setTempControlPoint(null);
 
+    // Migrate legacy fill areas
+    let migratedFillAreas: FillArea[] = [];
+    let legacyFillsDetected = 0;
+
+    if (data.fillAreas && data.fillAreas.length > 0) {
+      migratedFillAreas = data.fillAreas.filter((fillArea: FillArea | FillAreaLegacy) => {
+        // Check if this is a new boundary-based fill area
+        const isNewFormat = 'id' in fillArea && 'boundaryPoints' in fillArea;
+
+        // Check if this is a legacy fill area
+        const isLegacyFormat = 'elementId' in fillArea && 'fillAbove' in fillArea;
+
+        if (isLegacyFormat) {
+          legacyFillsDetected++;
+          return false; // Discard legacy fill areas
+        }
+
+        return isNewFormat; // Keep only new format
+      }) as FillArea[];
+    }
+
+    // Show warning if legacy fills were discarded
+    if (legacyFillsDetected > 0) {
+      console.warn(
+        `[EasyGraphs Migration] Discarded ${legacyFillsDetected} legacy fill area(s). ` +
+        `Legacy fill areas are no longer supported. Please recreate fills using the new Fill tool (■).`
+      );
+    }
+
     // Import new data
     setElements(data.elements || []);
-    setFillAreas(data.fillAreas || []);
+    setFillAreas(migratedFillAreas);
     setPanOffset(data.panOffset || { x: 0, y: 0 });
     setLabels(data.labels || DEFAULT_LABELS); // Backward compatibility
     setGroups(data.groups || []); // Backward compatibility
@@ -3545,7 +3748,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     // Rebuild action history for undo functionality
     const history: Action[] = [];
     data.elements.forEach(() => history.push({ type: 'element' }));
-    data.fillAreas.forEach(() => history.push({ type: 'fill' }));
+    migratedFillAreas.forEach(() => history.push({ type: 'fill' }));
     setActionHistory(history);
     setRedoHistory([]);
 
@@ -3695,7 +3898,6 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
   useImperativeHandle(ref, () => ({
     addLineByCoordinates,
     addPointByCoordinates,
-    addFillArea,
     addFunction,
     clearCanvas,
     undo,
@@ -3724,6 +3926,25 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     groupSelection: handleGroup,
     ungroupSelection: handleUngroup,
     getGroups: () => groups,
+    getFillAreas: () => fillAreas,
+    updateFillArea: (index: number, updates: Partial<NewFillArea>) => {
+      setFillAreas(prev => {
+        const updated = [...prev];
+        const current = updated[index] as unknown as NewFillArea;
+        updated[index] = { ...current, ...updates } as unknown as FillArea;
+        return updated;
+      });
+    },
+    deleteFillArea: (index: number) => {
+      if (index < 0 || index >= fillAreas.length) return;
+
+      setFillAreas(prev => prev.filter((_, i) => i !== index));
+
+      // Note: Current undo system only supports LIFO (Last In, First Out)
+      // Deletion via context menu cannot be undone at this time
+      // Only fill creation via fill tool is tracked in action history
+      setRedoHistory([]);
+    },
     resetPanOffset: () => {
       const canvas = canvasRef.current;
       if (!canvas) return;
@@ -3745,7 +3966,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       console.log('[Reset Button] Current panOffset before set:', panOffset.x, ',', panOffset.y);
       setPanOffset(defaultPanOffset);
     }
-  }), [addLineByCoordinates, addPointByCoordinates, addFillArea, addFunction, clearCanvas, undo, redo, elements, exportToPNG, exportToJPEG, exportToPDF, getSelectedElement, getSelectedElementId, updateSelectedElement, addModifyAction, getExportData, importData, togglePointProjection, calculateAllIntersections, getLabels, updateLabels, addTextBox, deleteTextBox, selectTextBox, handleCopy, handlePaste, handleDelete, selection, handleGroup, handleUngroup, groups, scale, getTitleOffset]);
+  }), [addLineByCoordinates, addPointByCoordinates, addFunction, clearCanvas, undo, redo, elements, exportToPNG, exportToJPEG, exportToPDF, getSelectedElement, getSelectedElementId, updateSelectedElement, addModifyAction, getExportData, importData, togglePointProjection, calculateAllIntersections, getLabels, updateLabels, addTextBox, deleteTextBox, selectTextBox, handleCopy, handlePaste, handleDelete, selection, handleGroup, handleUngroup, groups, fillAreas, scale, getTitleOffset]);
 
   return (
     <canvas

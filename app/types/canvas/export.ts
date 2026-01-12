@@ -67,15 +67,16 @@ export interface GraphCanvasProps {
   onScaleChange?: (scale: { x: number; y: number }) => void;
   onLabelsChange?: (labels: GraphLabels) => void;
   onIntersectionsChange?: (intersections: IntersectionPoint[]) => void;
+  onFillAreasChange?: (fillAreas: FillArea[]) => void;
   onIntersectionContextMenu?: (intersectionIndex: number, x: number, y: number) => void;
   onElementContextMenu?: (elementId: number, x: number, y: number) => void;
   onAxisContextMenu?: (axis: 'x' | 'y', x: number, y: number) => void;
+  onFillAreaContextMenu?: (fillAreaIndex: number, x: number, y: number) => void;
 }
 
 export interface GraphCanvasHandle {
   addLineByCoordinates: (start: Point, end: Point) => void;
   addPointByCoordinates: (point: Point) => void;
-  addFillArea: (elementId: number, fillAbove: boolean, color: string, fillToAxis?: boolean) => void;
   addFunction: (formula: string, xMin: number, xMax: number, color: string, lineWidth: number, lineStyle?: LineStyle, opacity?: number) => void;
   clearCanvas: () => void;
   undo: () => void;
@@ -105,4 +106,7 @@ export interface GraphCanvasHandle {
   ungroupSelection: () => void;
   getGroups: () => Group[];
   resetPanOffset: () => void;
+  getFillAreas: () => FillArea[];
+  updateFillArea: (index: number, updates: Partial<FillArea>) => void;
+  deleteFillArea: (index: number) => void;
 }

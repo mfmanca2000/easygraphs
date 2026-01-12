@@ -6,10 +6,11 @@ import { HelpCircle, Menu } from 'lucide-react';
 import GraphCanvas from './components/GraphCanvas';
 import type { DrawMode, Point, GraphCanvasHandle, GraphElement, EasyGraphsExport, GraphLabels, IntersectionPoint, IntersectionLabel } from '@/app/types/canvas';
 import { DEFAULT_LABELS } from '@/app/types/canvas';
+import type { FillArea } from '@/app/utils/canvas/fillArea';
 import Toolbar from './components/Toolbar';
 import ScaleControls from './components/ScaleControls';
 import CoordinateInput from './components/CoordinateInput';
-import FillAreaControls from './components/FillAreaControls';
+import FillAreaEditor from './components/FillAreaEditor';
 import FunctionInput from './components/FunctionInput';
 import LabelControls from './components/LabelControls';
 import CharacterPalette from './components/CharacterPalette';
@@ -74,6 +75,12 @@ export default function Home() {
     x: number;
     y: number;
   } | null>(null);
+  const [fillAreaContextMenu, setFillAreaContextMenu] = useState<{
+    fillAreaIndex: number;
+    x: number;
+    y: number;
+  } | null>(null);
+  const [fillAreas, setFillAreas] = useState<FillArea[]>([]);
 
   // Recalculate intersections when elements change (always calculate, even if not shown)
   useEffect(() => {
@@ -314,10 +321,26 @@ export default function Home() {
     }
   };
 
-  const handleAddFill = (elementId: number, fillAbove: boolean, color: string, fillToAxis?: boolean) => {
+  const handleFillColorChange = (index: number, color: string) => {
     if (canvasRef.current) {
-      canvasRef.current.addFillArea(elementId, fillAbove, color, fillToAxis);
+      canvasRef.current.updateFillArea(index, { color });
     }
+  };
+
+  const handleFillOpacityChange = (index: number, opacity: number) => {
+    if (canvasRef.current) {
+      canvasRef.current.updateFillArea(index, { opacity });
+    }
+  };
+
+  const handleFillDelete = (index: number) => {
+    if (canvasRef.current) {
+      canvasRef.current.deleteFillArea(index);
+    }
+  };
+
+  const handleFillAreasChange = (newFillAreas: FillArea[]) => {
+    setFillAreas(newFillAreas);
   };
 
   const handleAddFunction = (formula: string, xMin: number, xMax: number, color: string, lineWidth: number) => {
@@ -518,11 +541,17 @@ export default function Home() {
       // Calculate intersections when turning on
       const intersections = canvasRef.current.calculateAllIntersections();
       setIntersectionPoints(intersections);
-    } else {
-      // Clear intersections when turning off
-      setIntersectionPoints([]);
     }
+    // Note: We keep intersectionPoints even when hiding them, so fill areas continue to work
   };
+
+  // Auto-calculate intersections when elements change (for fill areas to work)
+  useEffect(() => {
+    if (canvasRef.current && elements.length > 0) {
+      const intersections = canvasRef.current.calculateAllIntersections();
+      setIntersectionPoints(intersections);
+    }
+  }, [elements]);
 
   const handleToggleIntersectionProjection = (intersectionIndex: number) => {
     setIntersectionPoints(prev => {
@@ -601,6 +630,14 @@ export default function Home() {
     setLabelModalIntersectionIndex(intersectionIndex);
     setShowAddLabelModal(true);
     handleCloseIntersectionContextMenu();
+  };
+
+  const handleFillAreaContextMenu = (fillAreaIndex: number, x: number, y: number) => {
+    setFillAreaContextMenu({ fillAreaIndex, x, y });
+  };
+
+  const handleCloseFillAreaContextMenu = () => {
+    setFillAreaContextMenu(null);
   };
 
   const handleCloseAddLabelModal = () => {
@@ -820,10 +857,11 @@ export default function Home() {
           </CollapsiblePanel>
 
           <CollapsiblePanel id="fill" title="Fill Areas" defaultExpanded={true}>
-            <FillAreaControls
-              elementCount={elementCount}
-              elements={elements}
-              onAddFill={handleAddFill}
+            <FillAreaEditor
+              fillAreas={fillAreas}
+              onColorChange={handleFillColorChange}
+              onOpacityChange={handleFillOpacityChange}
+              onDelete={handleFillDelete}
             />
           </CollapsiblePanel>
 
@@ -912,10 +950,11 @@ export default function Home() {
             </CollapsiblePanel>
 
             <CollapsiblePanel id="fill" title="Fill Areas" defaultExpanded={false}>
-              <FillAreaControls
-                elementCount={elementCount}
-                elements={elements}
-                onAddFill={handleAddFill}
+              <FillAreaEditor
+                fillAreas={fillAreas}
+                onColorChange={handleFillColorChange}
+                onOpacityChange={handleFillOpacityChange}
+                onDelete={handleFillDelete}
               />
             </CollapsiblePanel>
 
@@ -1028,9 +1067,11 @@ export default function Home() {
                   onElementsChange={handleElementsChange}
                   onScaleChange={setScale}
                   onLabelsChange={handleCanvasLabelsChange}
+                  onFillAreasChange={handleFillAreasChange}
                   onIntersectionContextMenu={handleIntersectionContextMenu}
                   onElementContextMenu={handleElementContextMenu}
                   onAxisContextMenu={handleAxisContextMenu}
+                  onFillAreaContextMenu={handleFillAreaContextMenu}
                 />
               </div>
             </div>
@@ -1377,6 +1418,46 @@ export default function Home() {
               }}
             >
               + Add Label to {axisContextMenu.axis.toUpperCase()}-Axis
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* Fill Area Context Menu */}
+      {fillAreaContextMenu && (
+        <>
+          <div
+            className="fixed inset-0 z-40"
+            onClick={handleCloseFillAreaContextMenu}
+          />
+          <div
+            className="fixed z-50 rounded-lg shadow-lg py-2"
+            style={{
+              left: `${fillAreaContextMenu.x}px`,
+              top: `${fillAreaContextMenu.y}px`,
+              background: '#FFFFFF',
+              border: '2px solid #F39C12',
+              minWidth: '180px'
+            }}
+          >
+            <button
+              onClick={() => {
+                handleFillDelete(fillAreaContextMenu.fillAreaIndex);
+                handleCloseFillAreaContextMenu();
+              }}
+              className="w-full px-4 py-2 text-left text-sm font-medium transition-all hover:bg-opacity-10"
+              style={{
+                color: '#E74C3C',
+                background: 'transparent'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(231, 76, 60, 0.1)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'transparent';
+              }}
+            >
+              Delete Fill Area
             </button>
           </div>
         </>

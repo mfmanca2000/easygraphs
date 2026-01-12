@@ -21,12 +21,17 @@ export interface GraphElement {
   arrowSize?: number;  // Arrow size in pixels (5-40) - default: lineWidth * 0.75
 }
 
-export interface FillArea {
+// Legacy fill area interface - deprecated, kept for migration
+export interface FillAreaLegacy {
   elementId: number;
   fillAbove: boolean;
   color: string;
   fillToAxis?: boolean; // If true, fill to axis instead of canvas edge
 }
+
+// New boundary-based fill area types are in @/app/utils/canvas/fillArea
+// Re-exported here for convenience
+export type { BoundaryPoint, BoundarySegment, FillArea } from '@/app/utils/canvas/fillArea';
 
 export interface IntersectionPoint {
   point: Point;
