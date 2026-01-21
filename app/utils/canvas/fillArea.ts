@@ -508,6 +508,168 @@ export function validateFillArea(
 type GraphToCanvasFunc = (x: number, y: number) => Point;
 
 /**
+ * Find the t parameter (0-1) on a quadratic bezier curve closest to a target point
+ */
+function findBezierT(
+  target: Point,
+  p0: Point,
+  p1: Point,
+  p2: Point,
+  curveType: 'quadratic' | 'cubic' | 's-curve',
+  p3?: Point
+): number {
+  // Use sampling to find approximate t
+  const samples = 100;
+  let minDist = Infinity;
+  let bestT = 0;
+
+  for (let i = 0; i <= samples; i++) {
+    const t = i / samples;
+    let point: Point;
+
+    if (curveType === 'quadratic') {
+      // Quadratic bezier: B(t) = (1-t)²P0 + 2(1-t)tP1 + t²P2
+      const mt = 1 - t;
+      point = {
+        x: mt * mt * p0.x + 2 * mt * t * p1.x + t * t * p2.x,
+        y: mt * mt * p0.y + 2 * mt * t * p1.y + t * t * p2.y
+      };
+    } else if (curveType === 'cubic' && p3) {
+      // Cubic bezier: B(t) = (1-t)³P0 + 3(1-t)²tP1 + 3(1-t)t²P2 + t³P3
+      const mt = 1 - t;
+      const mt2 = mt * mt;
+      const mt3 = mt2 * mt;
+      const t2 = t * t;
+      const t3 = t2 * t;
+      point = {
+        x: mt3 * p0.x + 3 * mt2 * t * p1.x + 3 * mt * t2 * p2.x + t3 * p3.x,
+        y: mt3 * p0.y + 3 * mt2 * t * p1.y + 3 * mt * t2 * p2.y + t3 * p3.y
+      };
+    } else {
+      // S-curve - treat as cubic with calculated control points
+      const dx = p2.x - p0.x;
+      const dy = p2.y - p0.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const ctrlDx = p1.x - (p0.x + p2.x) / 2;
+      const ctrlDy = p1.y - (p0.y + p2.y) / 2;
+      const intensity = dist > 0 ? Math.sqrt(ctrlDx * ctrlDx + ctrlDy * ctrlDy) / dist : 0;
+
+      const cp1x = p0.x + dx * 0.33 + ctrlDy * intensity;
+      const cp1y = p0.y + dy * 0.33 - ctrlDx * intensity;
+      const cp2x = p0.x + dx * 0.67 - ctrlDy * intensity;
+      const cp2y = p0.y + dy * 0.67 + ctrlDx * intensity;
+
+      const mt = 1 - t;
+      const mt2 = mt * mt;
+      const mt3 = mt2 * mt;
+      const t2 = t * t;
+      const t3 = t2 * t;
+      point = {
+        x: mt3 * p0.x + 3 * mt2 * t * cp1x + 3 * mt * t2 * cp2x + t3 * p2.x,
+        y: mt3 * p0.y + 3 * mt2 * t * cp1y + 3 * mt * t2 * cp2y + t3 * p2.y
+      };
+    }
+
+    const dist = distance(target, point);
+    if (dist < minDist) {
+      minDist = dist;
+      bestT = t;
+    }
+  }
+
+  return bestT;
+}
+
+/**
+ * Subdivide a quadratic bezier curve at parameter t
+ * Returns the portion of the curve from t1 to t2
+ */
+function subdivideQuadraticBezier(
+  p0: Point,
+  p1: Point,
+  p2: Point,
+  t1: number,
+  t2: number
+): { start: Point; control: Point; end: Point } {
+  // First, get the curve from 0 to t2
+  const mt2 = 1 - t2;
+  const q0 = p0;
+  const q1 = { x: mt2 * p0.x + t2 * p1.x, y: mt2 * p0.y + t2 * p1.y };
+  const q2 = { x: mt2 * p1.x + t2 * p2.x, y: mt2 * p1.y + t2 * p2.y };
+  const r1 = { x: mt2 * q1.x + t2 * q2.x, y: mt2 * q1.y + t2 * q2.y };
+  const endPoint = { x: mt2 * mt2 * p0.x + 2 * mt2 * t2 * p1.x + t2 * t2 * p2.x,
+                     y: mt2 * mt2 * p0.y + 2 * mt2 * t2 * p1.y + t2 * t2 * p2.y };
+
+  // Now subdivide from t1 to t2 (adjust t1 to be relative to the 0-t2 curve)
+  const adjustedT1 = t1 / t2;
+  const mt1 = 1 - adjustedT1;
+
+  const startPoint = {
+    x: mt1 * mt1 * q0.x + 2 * mt1 * adjustedT1 * q1.x + adjustedT1 * adjustedT1 * endPoint.x,
+    y: mt1 * mt1 * q0.y + 2 * mt1 * adjustedT1 * q1.y + adjustedT1 * adjustedT1 * endPoint.y
+  };
+
+  const controlPoint = {
+    x: mt1 * q1.x + adjustedT1 * r1.x,
+    y: mt1 * q1.y + adjustedT1 * r1.y
+  };
+
+  return { start: startPoint, control: controlPoint, end: endPoint };
+}
+
+/**
+ * Subdivide a cubic bezier curve at parameter t
+ * Returns the portion of the curve from t1 to t2
+ */
+function subdivideCubicBezier(
+  p0: Point,
+  p1: Point,
+  p2: Point,
+  p3: Point,
+  t1: number,
+  t2: number
+): { start: Point; control1: Point; control2: Point; end: Point } {
+  // First, get the curve from 0 to t2 using De Casteljau
+  const mt2 = 1 - t2;
+  const q0 = p0;
+  const q1 = { x: mt2 * p0.x + t2 * p1.x, y: mt2 * p0.y + t2 * p1.y };
+  const q2 = { x: mt2 * p1.x + t2 * p2.x, y: mt2 * p1.y + t2 * p2.y };
+  const q3 = { x: mt2 * p2.x + t2 * p3.x, y: mt2 * p2.y + t2 * p3.y };
+  const r1 = { x: mt2 * q1.x + t2 * q2.x, y: mt2 * q1.y + t2 * q2.y };
+  const r2 = { x: mt2 * q2.x + t2 * q3.x, y: mt2 * q2.y + t2 * q3.y };
+  const s1 = { x: mt2 * r1.x + t2 * r2.x, y: mt2 * r1.y + t2 * r2.y };
+
+  // Calculate the end point on the full curve at t2
+  const mt2_3 = mt2 * mt2 * mt2;
+  const t2_3 = t2 * t2 * t2;
+  const endPoint = {
+    x: mt2_3 * p0.x + 3 * mt2 * mt2 * t2 * p1.x + 3 * mt2 * t2 * t2 * p2.x + t2_3 * p3.x,
+    y: mt2_3 * p0.y + 3 * mt2 * mt2 * t2 * p1.y + 3 * mt2 * t2 * t2 * p2.y + t2_3 * p3.y
+  };
+
+  // Now subdivide from t1 to t2 (adjust t1 to be relative to the 0-t2 curve)
+  const adjustedT1 = t1 / t2;
+  const mt1 = 1 - adjustedT1;
+
+  const startPoint = {
+    x: mt1 * mt1 * mt1 * q0.x + 3 * mt1 * mt1 * adjustedT1 * q1.x + 3 * mt1 * adjustedT1 * adjustedT1 * r1.x + adjustedT1 * adjustedT1 * adjustedT1 * endPoint.x,
+    y: mt1 * mt1 * mt1 * q0.y + 3 * mt1 * mt1 * adjustedT1 * q1.y + 3 * mt1 * adjustedT1 * adjustedT1 * r1.y + adjustedT1 * adjustedT1 * adjustedT1 * endPoint.y
+  };
+
+  const control1 = {
+    x: mt1 * q1.x + adjustedT1 * r1.x,
+    y: mt1 * q1.y + adjustedT1 * r1.y
+  };
+
+  const control2 = {
+    x: mt1 * r1.x + adjustedT1 * s1.x,
+    y: mt1 * r1.y + adjustedT1 * s1.y
+  };
+
+  return { start: startPoint, control1, control2, end: endPoint };
+}
+
+/**
  * Trace a bezier curve path forward (from start to end)
  */
 function traceBezierForward(
@@ -639,16 +801,129 @@ function traceElementPath(
     const toCanvas = graphToCanvas(toPoint.x, toPoint.y);
     ctx.lineTo(toCanvas.x, toCanvas.y);
   } else if (element.type === 'bezier') {
-    // For bezier curves, trace the entire curve based on direction
-    // Note: Ideally we would trace only the portion between the two points,
-    // but that requires subdividing the bezier curve, which is complex.
-    // For now, trace the full curve and accept that fills may not be perfect.
-    const goForward = isCloserToStart(fromPoint, element);
+    // For bezier curves, subdivide to trace only the portion between the two points
+    if (element.points.length < 2 || !element.controlPoint) {
+      // Fallback to straight line if invalid
+      const toCanvas = graphToCanvas(toPoint.x, toPoint.y);
+      ctx.lineTo(toCanvas.x, toCanvas.y);
+      return;
+    }
 
-    if (goForward) {
-      traceBezierForward(ctx, element, graphToCanvas);
+    const p0 = element.points[0];
+    const p2 = element.points[1];
+    const p1 = element.controlPoint;
+    const curveType = element.curveType || 'quadratic';
+
+    // Find t parameters for from and to points
+    let t1: number, t2: number;
+
+    if (curveType === 'cubic' && element.controlPoint2) {
+      const p3 = element.controlPoint2;
+      t1 = findBezierT(fromPoint, p0, p1, p3, 'cubic', p2);
+      t2 = findBezierT(toPoint, p0, p1, p3, 'cubic', p2);
+    } else if (curveType === 's-curve') {
+      t1 = findBezierT(fromPoint, p0, p1, p2, 's-curve');
+      t2 = findBezierT(toPoint, p0, p1, p2, 's-curve');
     } else {
-      traceBezierBackward(ctx, element, graphToCanvas);
+      // Quadratic
+      t1 = findBezierT(fromPoint, p0, p1, p2, 'quadratic');
+      t2 = findBezierT(toPoint, p0, p1, p2, 'quadratic');
+    }
+
+    // Ensure t1 < t2 (trace in the correct direction)
+    if (t1 > t2) {
+      [t1, t2] = [t2, t1];
+    }
+
+    // Check if we should go the "short way" or "long way" around the curve
+    // If t2 - t1 > 0.5, it's likely we want the other portion (0 to t1 and t2 to 1)
+    const shouldReverse = (t2 - t1) > 0.5;
+
+    if (shouldReverse) {
+      // Trace the long way: from t2 to 1, then 0 to t1
+      // For simplicity, trace the entire curve (this handles edge cases)
+      // A more sophisticated approach would trace both segments
+      const goForward = isCloserToStart(fromPoint, element);
+      if (goForward) {
+        traceBezierForward(ctx, element, graphToCanvas);
+      } else {
+        traceBezierBackward(ctx, element, graphToCanvas);
+      }
+    } else {
+      // Trace the subdivided portion from t1 to t2
+      if (curveType === 'cubic' && element.controlPoint2) {
+        // Cubic bezier
+        const dx = p2.x - p0.x;
+        const dy = p2.y - p0.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const ctrlDx = p1.x - (p0.x + p2.x) / 2;
+        const ctrlDy = p1.y - (p0.y + p2.y) / 2;
+        const intensity = dist > 0 ? Math.sqrt(ctrlDx * ctrlDx + ctrlDy * ctrlDy) / dist : 0;
+
+        const cp1x = p0.x + dx * 0.33 + ctrlDy * intensity;
+        const cp1y = p0.y + dy * 0.33 - ctrlDx * intensity;
+        const cp2x = p0.x + dx * 0.67 - ctrlDy * intensity;
+        const cp2y = p0.y + dy * 0.67 + ctrlDx * intensity;
+
+        const subdivided = subdivideCubicBezier(
+          p0,
+          { x: cp1x, y: cp1y },
+          { x: cp2x, y: cp2y },
+          p2,
+          t1,
+          t2
+        );
+
+        const control1Canvas = graphToCanvas(subdivided.control1.x, subdivided.control1.y);
+        const control2Canvas = graphToCanvas(subdivided.control2.x, subdivided.control2.y);
+        const endCanvas = graphToCanvas(subdivided.end.x, subdivided.end.y);
+
+        ctx.bezierCurveTo(
+          control1Canvas.x, control1Canvas.y,
+          control2Canvas.x, control2Canvas.y,
+          endCanvas.x, endCanvas.y
+        );
+      } else if (curveType === 's-curve') {
+        // S-curve
+        const dx = p2.x - p0.x;
+        const dy = p2.y - p0.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const ctrlDx = p1.x - (p0.x + p2.x) / 2;
+        const ctrlDy = p1.y - (p0.y + p2.y) / 2;
+        const intensity = dist > 0 ? Math.sqrt(ctrlDx * ctrlDx + ctrlDy * ctrlDy) / dist : 0;
+
+        const cp1x = p0.x + dx * 0.33 + ctrlDy * intensity;
+        const cp1y = p0.y + dy * 0.33 - ctrlDx * intensity;
+        const cp2x = p0.x + dx * 0.67 - ctrlDy * intensity;
+        const cp2y = p0.y + dy * 0.67 + ctrlDx * intensity;
+
+        const subdivided = subdivideCubicBezier(
+          p0,
+          { x: cp1x, y: cp1y },
+          { x: cp2x, y: cp2y },
+          p2,
+          t1,
+          t2
+        );
+
+        const control1Canvas = graphToCanvas(subdivided.control1.x, subdivided.control1.y);
+        const control2Canvas = graphToCanvas(subdivided.control2.x, subdivided.control2.y);
+        const endCanvas = graphToCanvas(subdivided.end.x, subdivided.end.y);
+
+        ctx.bezierCurveTo(
+          control1Canvas.x, control1Canvas.y,
+          control2Canvas.x, control2Canvas.y,
+          endCanvas.x, endCanvas.y
+        );
+      } else {
+        // Quadratic bezier
+        const subdivided = subdivideQuadraticBezier(p0, p1, p2, t1, t2);
+
+        const controlCanvas = graphToCanvas(subdivided.control.x, subdivided.control.y);
+        const endCanvas = graphToCanvas(subdivided.end.x, subdivided.end.y);
+
+        ctx.quadraticCurveTo(controlCanvas.x, controlCanvas.y, endCanvas.x, endCanvas.y);
+      }
     }
   } else if (element.type === 'freehand' || element.type === 'function') {
     // Find segment range and trace with lineTo
