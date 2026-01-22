@@ -1087,7 +1087,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
 
           prevPoint = point;
         }
-      } else if (element.type !== 'point') {
+      } else {
         // For lines, freehand, and functions - check consecutive points
         for (let i = 0; i < element.points.length - 1; i++) {
           const p1 = element.points[i];
