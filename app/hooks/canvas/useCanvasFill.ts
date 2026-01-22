@@ -63,11 +63,12 @@ export function useCanvasFill() {
   }, []);
 
   const completeFill = useCallback(() => {
-    // Return current boundary for the caller to create the fill area
+    // Return current boundary and segments for the caller to create the fill area
     const boundary = fillToolState.currentBoundary;
+    const segments = fillToolState.previewSegments;
     resetFillTool();
-    return boundary;
-  }, [fillToolState.currentBoundary, resetFillTool]);
+    return { boundary, segments };
+  }, [fillToolState.currentBoundary, fillToolState.previewSegments, resetFillTool]);
 
   // Boundary editing functions
   const startEditingBoundary = useCallback((fillAreaId: string) => {

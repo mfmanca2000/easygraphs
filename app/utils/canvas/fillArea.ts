@@ -10,7 +10,7 @@ import { distance } from './geometry';
 export type BoundaryPoint =
   | { type: 'intersection'; intersectionIndex: number }
   | { type: 'elementPoint'; elementId: number; pointIndex: number }
-  | { type: 'axisPoint'; axis: 'x' | 'y'; position: number };
+  | { type: 'axisPoint'; axis: 'x' | 'y'; position: number; elementId?: number };
 
 /**
  * Represents a traced path between two boundary points
@@ -97,7 +97,13 @@ export function getAssociatedElements(
     return [bp.elementId];
   }
 
-  // Axis points are not associated with elements
+  // Axis points may be associated with an element if they're axis crossings
+  if (bp.type === 'axisPoint' && bp.elementId !== undefined) {
+    if (bp.elementId >= 0 && bp.elementId < elements.length) {
+      return [bp.elementId];
+    }
+  }
+
   return [];
 }
 
@@ -108,7 +114,8 @@ export function findSharedElement(
   fromPoint: BoundaryPoint,
   toPoint: BoundaryPoint,
   elements: GraphElement[],
-  intersections: IntersectionPoint[]
+  intersections: IntersectionPoint[],
+  preferCurves: boolean = false
 ): { id: number } | null {
   const fromElements = getAssociatedElements(fromPoint, elements, intersections);
   const toElements = getAssociatedElements(toPoint, elements, intersections);
@@ -135,19 +142,156 @@ export function findSharedElement(
     return { id: sharedElements[0] };
   }
 
-  // Multiple shared elements - prefer lines over curves (lines are shorter/more direct)
-  console.log('[Fill] Multiple shared elements:', sharedElements);
+  // Multiple shared elements - choose the most appropriate one
+  console.log('[Fill] Multiple shared elements:', sharedElements, preferCurves ? '(PREFER CURVES)' : '(auto)');
+
+  // Calculate both the straight-line distance and path distance
+  const fromCoord = resolvePointCoordinates(fromPoint, elements, intersections);
+  const toCoord = resolvePointCoordinates(toPoint, elements, intersections);
+  const straightLineDistance = distance(fromCoord, toCoord);
+
+  // Calculate the distance along each element between the two points
+  let bestElement = sharedElements[0];
+  let bestScore = -Infinity;
+
   for (const elementId of sharedElements) {
     const element = elements[elementId];
-    if (element && element.type === 'line') {
-      console.log('[Fill] Choosing line element:', elementId);
-      return { id: elementId };
+    if (!element) continue;
+
+    // Resolve the actual coordinates of the from and to points
+    const fromCoord = resolvePointCoordinates(fromPoint, elements, intersections);
+    const toCoord = resolvePointCoordinates(toPoint, elements, intersections);
+
+    // Calculate path length along the element
+    let pathLength = 0;
+
+    if (element.type === 'bezier' && element.controlPoint) {
+      // For bezier curves, sample the curve to estimate length
+      const p0 = element.points[0];
+      const p2 = element.points[1];
+      const p1 = element.controlPoint;
+      const curveType = element.curveType || 'quadratic';
+      const samples = 50;
+      let prevPoint: Point | null = null;
+
+      for (let i = 0; i <= samples; i++) {
+        const t = i / samples;
+        let point: Point;
+
+        if (curveType === 'quadratic') {
+          const mt = 1 - t;
+          point = {
+            x: mt * mt * p0.x + 2 * mt * t * p1.x + t * t * p2.x,
+            y: mt * mt * p0.y + 2 * mt * t * p1.y + t * t * p2.y
+          };
+        } else if (curveType === 'cubic' && element.controlPoint2) {
+          const p3 = element.controlPoint2;
+          const mt = 1 - t;
+          const mt2 = mt * mt;
+          const mt3 = mt2 * mt;
+          const t2 = t * t;
+          const t3 = t2 * t;
+          point = {
+            x: mt3 * p0.x + 3 * mt2 * t * p1.x + 3 * mt * t2 * p3.x + t3 * p2.x,
+            y: mt3 * p0.y + 3 * mt2 * t * p1.y + 3 * mt * t2 * p3.y + t3 * p2.y
+          };
+        } else if (curveType === 's-curve') {
+          const dx = p2.x - p0.x;
+          const dy = p2.y - p0.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          const ctrlDx = p1.x - (p0.x + p2.x) / 2;
+          const ctrlDy = p1.y - (p0.y + p2.y) / 2;
+          const intensity = dist > 0 ? Math.sqrt(ctrlDx * ctrlDx + ctrlDy * ctrlDy) / dist : 0;
+
+          const cp1x = p0.x + dx * 0.33 + ctrlDy * intensity;
+          const cp1y = p0.y + dy * 0.33 - ctrlDx * intensity;
+          const cp2x = p0.x + dx * 0.67 - ctrlDy * intensity;
+          const cp2y = p0.y + dy * 0.67 + ctrlDx * intensity;
+
+          const mt = 1 - t;
+          const mt2 = mt * mt;
+          const mt3 = mt2 * mt;
+          const t2 = t * t;
+          const t3 = t2 * t;
+          point = {
+            x: mt3 * p0.x + 3 * mt2 * t * cp1x + 3 * mt * t2 * cp2x + t3 * p2.x,
+            y: mt3 * p0.y + 3 * mt2 * t * cp1y + 3 * mt * t2 * cp2y + t3 * p2.y
+          };
+        } else {
+          continue;
+        }
+
+        if (prevPoint) {
+          pathLength += distance(prevPoint, point);
+        }
+        prevPoint = point;
+      }
+    } else {
+      // For lines, freehand, and functions - sum distances between consecutive points
+      const fromIdx = findClosestPointIndex(fromCoord, element.points);
+      const toIdx = findClosestPointIndex(toCoord, element.points);
+      const startIdx = Math.min(fromIdx, toIdx);
+      const endIdx = Math.max(fromIdx, toIdx);
+
+      for (let i = startIdx; i < endIdx && i < element.points.length - 1; i++) {
+        const p1 = element.points[i];
+        const p2 = element.points[i + 1];
+        pathLength += distance(p1, p2);
+      }
+    }
+
+    // Score this element based on how reasonable the path is
+    // Prefer paths that are close to the straight-line distance
+    // Heavily penalize paths that are much longer (going the long way around)
+    const ratio = pathLength / straightLineDistance;
+    let score = 0;
+
+    const isCurve = element.type === 'bezier' || element.type === 'freehand' || element.type === 'function';
+    const isLine = element.type === 'line';
+
+    if (ratio < 1.5) {
+      // Path is reasonably direct (less than 1.5x the straight line)
+      if (preferCurves && isCurve) {
+        // User wants curves - give huge bonus
+        score = 1000 + pathLength;
+      } else if (preferCurves && isLine) {
+        // User wants curves but this is a line - penalize
+        score = 10 + pathLength;
+      } else if (!preferCurves && isLine) {
+        // Default: prefer more direct paths, lines get slight bonus
+        score = 100 + pathLength;
+      } else {
+        // Default: curves are OK too
+        score = 90 + pathLength;
+      }
+    } else if (ratio < 3.0) {
+      // Path is somewhat longer but not crazy
+      if (preferCurves && isCurve) {
+        // User wants curves, still give bonus even if longer
+        score = 500 + pathLength / ratio;
+      } else {
+        score = pathLength / ratio; // Penalize by the ratio
+      }
+    } else {
+      // Path is way too long - probably going the wrong way
+      if (preferCurves && isCurve) {
+        // User explicitly wants curves, honor that even if very long
+        score = 300; // Positive score, but lower than reasonable paths
+      } else {
+        score = -pathLength; // Negative score
+      }
+    }
+
+    console.log(`[Fill] Element ${elementId} (${element.type}): path=${pathLength.toFixed(2)}, straight=${straightLineDistance.toFixed(2)}, ratio=${ratio.toFixed(2)}, score=${score.toFixed(2)}`);
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestElement = elementId;
     }
   }
 
-  // If no line, just use the first one
-  console.log('[Fill] No line found, using first shared element:', sharedElements[0]);
-  return { id: sharedElements[0] };
+  console.log('[Fill] Choosing element with best score:', bestElement, 'score:', bestScore.toFixed(2));
+  return { id: bestElement };
 }
 
 /**
@@ -305,7 +449,8 @@ export function traceBoundaryPath(
   fromPoint: BoundaryPoint,
   toPoint: BoundaryPoint,
   elements: GraphElement[],
-  intersections: IntersectionPoint[]
+  intersections: IntersectionPoint[],
+  preferCurves: boolean = false
 ): BoundarySegment | null {
   try {
     // Resolve coordinates to verify points exist
@@ -313,11 +458,16 @@ export function traceBoundaryPath(
     const toCoord = resolvePointCoordinates(toPoint, elements, intersections);
 
     // Step 1: Check if points share an element (direct path along curve/line)
-    const sharedElement = findSharedElement(fromPoint, toPoint, elements, intersections);
+    const sharedElement = findSharedElement(fromPoint, toPoint, elements, intersections, preferCurves);
     if (sharedElement) {
       const element = elements[sharedElement.id];
       if (element) {
-        console.log(`[Fill] Found shared element ${sharedElement.id} (${element.type}) between points`);
+        console.log(`[Fill] Found shared element ${sharedElement.id} (${element.type}) between points`, {
+          fromPoint,
+          toPoint,
+          fromCoord,
+          toCoord
+        });
         return {
           fromPoint,
           toPoint,
@@ -325,6 +475,13 @@ export function traceBoundaryPath(
           elementId: sharedElement.id
         };
       }
+    } else {
+      console.log('[Fill] No shared element found between points:', {
+        fromPoint,
+        toPoint,
+        fromElements: getAssociatedElements(fromPoint, elements, intersections),
+        toElements: getAssociatedElements(toPoint, elements, intersections)
+      });
     }
 
     // Step 2: Check if connected via projection
@@ -830,98 +987,139 @@ function traceElementPath(
       t2 = findBezierT(toPoint, p0, p1, p2, 'quadratic');
     }
 
-    // Ensure t1 < t2 (trace in the correct direction)
-    if (t1 > t2) {
-      [t1, t2] = [t2, t1];
-    }
+    // Determine which direction to trace along the curve
+    const shortPathLength = Math.abs(t2 - t1);
+    const longPathLength = 1.0 - shortPathLength;
 
-    // Check if we should go the "short way" or "long way" around the curve
-    // If t2 - t1 > 0.5, it's likely we want the other portion (0 to t1 and t2 to 1)
-    const shouldReverse = (t2 - t1) > 0.5;
-
-    if (shouldReverse) {
-      // Trace the long way: from t2 to 1, then 0 to t1
-      // For simplicity, trace the entire curve (this handles edge cases)
-      // A more sophisticated approach would trace both segments
+    // Always take the shorter path, but preserve the direction (from t1 to t2)
+    if (shortPathLength > 0.5) {
+      // The "short path" from t1 to t2 is actually > 0.5, which means
+      // we should go the other way around the curve
+      // Reverse by going from t2 toward t1 but wrapping around
+      // For now, fall back to full curve tracing
       const goForward = isCloserToStart(fromPoint, element);
       if (goForward) {
         traceBezierForward(ctx, element, graphToCanvas);
       } else {
         traceBezierBackward(ctx, element, graphToCanvas);
       }
-    } else {
-      // Trace the subdivided portion from t1 to t2
-      if (curveType === 'cubic' && element.controlPoint2) {
-        // Cubic bezier
-        const dx = p2.x - p0.x;
-        const dy = p2.y - p0.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        const ctrlDx = p1.x - (p0.x + p2.x) / 2;
-        const ctrlDy = p1.y - (p0.y + p2.y) / 2;
-        const intensity = dist > 0 ? Math.sqrt(ctrlDx * ctrlDx + ctrlDy * ctrlDy) / dist : 0;
+      return;
+    }
 
-        const cp1x = p0.x + dx * 0.33 + ctrlDy * intensity;
-        const cp1y = p0.y + dy * 0.33 - ctrlDx * intensity;
-        const cp2x = p0.x + dx * 0.67 - ctrlDy * intensity;
-        const cp2y = p0.y + dy * 0.67 + ctrlDx * intensity;
+    // If t1 > t2, we need to trace backward
+    const needsReverse = t1 > t2;
+    if (needsReverse) {
+      // Swap for subdivision, but we'll trace it backward
+      [t1, t2] = [t2, t1];
+    }
 
-        const subdivided = subdivideCubicBezier(
-          p0,
-          { x: cp1x, y: cp1y },
-          { x: cp2x, y: cp2y },
-          p2,
-          t1,
-          t2
-        );
+    // Trace the subdivided portion from t1 to t2
+    if (curveType === 'cubic' && element.controlPoint2) {
+      // Cubic bezier
+      const dx = p2.x - p0.x;
+      const dy = p2.y - p0.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const ctrlDx = p1.x - (p0.x + p2.x) / 2;
+      const ctrlDy = p1.y - (p0.y + p2.y) / 2;
+      const intensity = dist > 0 ? Math.sqrt(ctrlDx * ctrlDx + ctrlDy * ctrlDy) / dist : 0;
 
-        const control1Canvas = graphToCanvas(subdivided.control1.x, subdivided.control1.y);
+      const cp1x = p0.x + dx * 0.33 + ctrlDy * intensity;
+      const cp1y = p0.y + dy * 0.33 - ctrlDx * intensity;
+      const cp2x = p0.x + dx * 0.67 - ctrlDy * intensity;
+      const cp2y = p0.y + dy * 0.67 + ctrlDx * intensity;
+
+      const subdivided = subdivideCubicBezier(
+        p0,
+        { x: cp1x, y: cp1y },
+        { x: cp2x, y: cp2y },
+        p2,
+        t1,
+        t2
+      );
+
+      if (needsReverse) {
+        // We swapped t1/t2, so trace from subdivided.end to subdivided.start
+        // Reverse the control points too
         const control2Canvas = graphToCanvas(subdivided.control2.x, subdivided.control2.y);
-        const endCanvas = graphToCanvas(subdivided.end.x, subdivided.end.y);
+        const control1Canvas = graphToCanvas(subdivided.control1.x, subdivided.control1.y);
+        const startCanvas = graphToCanvas(subdivided.start.x, subdivided.start.y);
 
         ctx.bezierCurveTo(
-          control1Canvas.x, control1Canvas.y,
           control2Canvas.x, control2Canvas.y,
-          endCanvas.x, endCanvas.y
-        );
-      } else if (curveType === 's-curve') {
-        // S-curve
-        const dx = p2.x - p0.x;
-        const dy = p2.y - p0.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        const ctrlDx = p1.x - (p0.x + p2.x) / 2;
-        const ctrlDy = p1.y - (p0.y + p2.y) / 2;
-        const intensity = dist > 0 ? Math.sqrt(ctrlDx * ctrlDx + ctrlDy * ctrlDy) / dist : 0;
-
-        const cp1x = p0.x + dx * 0.33 + ctrlDy * intensity;
-        const cp1y = p0.y + dy * 0.33 - ctrlDx * intensity;
-        const cp2x = p0.x + dx * 0.67 - ctrlDy * intensity;
-        const cp2y = p0.y + dy * 0.67 + ctrlDx * intensity;
-
-        const subdivided = subdivideCubicBezier(
-          p0,
-          { x: cp1x, y: cp1y },
-          { x: cp2x, y: cp2y },
-          p2,
-          t1,
-          t2
-        );
-
-        const control1Canvas = graphToCanvas(subdivided.control1.x, subdivided.control1.y);
-        const control2Canvas = graphToCanvas(subdivided.control2.x, subdivided.control2.y);
-        const endCanvas = graphToCanvas(subdivided.end.x, subdivided.end.y);
-
-        ctx.bezierCurveTo(
           control1Canvas.x, control1Canvas.y,
-          control2Canvas.x, control2Canvas.y,
-          endCanvas.x, endCanvas.y
+          startCanvas.x, startCanvas.y
         );
       } else {
-        // Quadratic bezier
-        const subdivided = subdivideQuadraticBezier(p0, p1, p2, t1, t2);
-
-        const controlCanvas = graphToCanvas(subdivided.control.x, subdivided.control.y);
+        const control1Canvas = graphToCanvas(subdivided.control1.x, subdivided.control1.y);
+        const control2Canvas = graphToCanvas(subdivided.control2.x, subdivided.control2.y);
         const endCanvas = graphToCanvas(subdivided.end.x, subdivided.end.y);
 
+        ctx.bezierCurveTo(
+          control1Canvas.x, control1Canvas.y,
+          control2Canvas.x, control2Canvas.y,
+          endCanvas.x, endCanvas.y
+        );
+      }
+    } else if (curveType === 's-curve') {
+      // S-curve
+      const dx = p2.x - p0.x;
+      const dy = p2.y - p0.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const ctrlDx = p1.x - (p0.x + p2.x) / 2;
+      const ctrlDy = p1.y - (p0.y + p2.y) / 2;
+      const intensity = dist > 0 ? Math.sqrt(ctrlDx * ctrlDx + ctrlDy * ctrlDy) / dist : 0;
+
+      const cp1x = p0.x + dx * 0.33 + ctrlDy * intensity;
+      const cp1y = p0.y + dy * 0.33 - ctrlDx * intensity;
+      const cp2x = p0.x + dx * 0.67 - ctrlDy * intensity;
+      const cp2y = p0.y + dy * 0.67 + ctrlDx * intensity;
+
+      const subdivided = subdivideCubicBezier(
+        p0,
+        { x: cp1x, y: cp1y },
+        { x: cp2x, y: cp2y },
+        p2,
+        t1,
+        t2
+      );
+
+      if (needsReverse) {
+        // We swapped t1/t2, so trace from subdivided.end to subdivided.start
+        const control2Canvas = graphToCanvas(subdivided.control2.x, subdivided.control2.y);
+        const control1Canvas = graphToCanvas(subdivided.control1.x, subdivided.control1.y);
+        const startCanvas = graphToCanvas(subdivided.start.x, subdivided.start.y);
+
+        ctx.bezierCurveTo(
+          control2Canvas.x, control2Canvas.y,
+          control1Canvas.x, control1Canvas.y,
+          startCanvas.x, startCanvas.y
+        );
+      } else {
+        const control1Canvas = graphToCanvas(subdivided.control1.x, subdivided.control1.y);
+        const control2Canvas = graphToCanvas(subdivided.control2.x, subdivided.control2.y);
+        const endCanvas = graphToCanvas(subdivided.end.x, subdivided.end.y);
+
+        ctx.bezierCurveTo(
+          control1Canvas.x, control1Canvas.y,
+          control2Canvas.x, control2Canvas.y,
+          endCanvas.x, endCanvas.y
+        );
+      }
+    } else {
+      // Quadratic bezier
+      const subdivided = subdivideQuadraticBezier(p0, p1, p2, t1, t2);
+
+      if (needsReverse) {
+        // We swapped t1/t2 during subdivision
+        // subdivided.start corresponds to the original t2 (our target)
+        // subdivided.end corresponds to the original t1 (where we are now)
+        // Canvas cursor is near subdivided.end, we need to draw to subdivided.start
+        const controlCanvas = graphToCanvas(subdivided.control.x, subdivided.control.y);
+        const startCanvas = graphToCanvas(subdivided.start.x, subdivided.start.y);
+        ctx.quadraticCurveTo(controlCanvas.x, controlCanvas.y, startCanvas.x, startCanvas.y);
+      } else {
+        const controlCanvas = graphToCanvas(subdivided.control.x, subdivided.control.y);
+        const endCanvas = graphToCanvas(subdivided.end.x, subdivided.end.y);
         ctx.quadraticCurveTo(controlCanvas.x, controlCanvas.y, endCanvas.x, endCanvas.y);
       }
     }
@@ -952,22 +1150,27 @@ function traceSegmentForFill(
   intersections: IntersectionPoint[],
   graphToCanvas: GraphToCanvasFunc
 ): void {
-  if (segment.pathType === 'element' && segment.elementId !== undefined) {
-    const element = elements[segment.elementId];
-    if (!element) {
-      return;
+  try {
+    if (segment.pathType === 'element' && segment.elementId !== undefined) {
+      const element = elements[segment.elementId];
+      if (!element) {
+        return;
+      }
+
+      const fromCoord = resolvePointCoordinates(segment.fromPoint, elements, intersections);
+      const toCoord = resolvePointCoordinates(segment.toPoint, elements, intersections);
+
+      // Trace along the element's curve/line
+      traceElementPath(ctx, element, fromCoord, toCoord, graphToCanvas);
+    } else if (segment.pathType === 'projection' || segment.pathType === 'axis') {
+      // Straight line for projections and axis segments
+      const toCoord = resolvePointCoordinates(segment.toPoint, elements, intersections);
+      const toCanvas = graphToCanvas(toCoord.x, toCoord.y);
+      ctx.lineTo(toCanvas.x, toCanvas.y);
     }
-
-    const fromCoord = resolvePointCoordinates(segment.fromPoint, elements, intersections);
-    const toCoord = resolvePointCoordinates(segment.toPoint, elements, intersections);
-
-    // Trace along the element's curve/line
-    traceElementPath(ctx, element, fromCoord, toCoord, graphToCanvas);
-  } else if (segment.pathType === 'projection' || segment.pathType === 'axis') {
-    // Straight line for projections and axis segments
-    const toCoord = resolvePointCoordinates(segment.toPoint, elements, intersections);
-    const toCanvas = graphToCanvas(toCoord.x, toCoord.y);
-    ctx.lineTo(toCanvas.x, toCanvas.y);
+  } catch (error) {
+    console.warn('[traceSegmentForFill] Error tracing segment, skipping:', error);
+    // Continue to next segment
   }
 }
 
@@ -987,6 +1190,12 @@ export function renderFillArea(
   intersections: IntersectionPoint[],
   graphToCanvas: GraphToCanvasFunc
 ): void {
+  // Validate the fill area first
+  if (!validateFillArea(fillArea, elements, intersections)) {
+    console.warn('[renderFillArea] Fill area is invalid, skipping render:', fillArea.id);
+    return;
+  }
+
   // Ensure we have cached segments
   if (!fillArea.segments || fillArea.segments.length === 0) {
     fillArea.segments = computeSegments(fillArea.boundaryPoints, elements, intersections);

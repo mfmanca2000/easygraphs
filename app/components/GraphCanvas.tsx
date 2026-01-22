@@ -783,6 +783,137 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       }
     }
 
+    // Check axis crossing points for curves and lines (before checking generic endpoints)
+    for (let i = 0; i < elements.length; i++) {
+      const element = elements[i];
+      if (element.type === 'point') continue;
+
+      if (element.type === 'bezier' && element.controlPoint) {
+        // For bezier curves, sample the curve to find axis crossings
+        const p0 = element.points[0];
+        const p2 = element.points[1];
+        const p1 = element.controlPoint;
+        const curveType = element.curveType || 'quadratic';
+
+        const samples = 100;
+        let prevPoint: Point | null = null;
+
+        for (let s = 0; s <= samples; s++) {
+          const t = s / samples;
+          let point: Point;
+
+          if (curveType === 'quadratic') {
+            const mt = 1 - t;
+            point = {
+              x: mt * mt * p0.x + 2 * mt * t * p1.x + t * t * p2.x,
+              y: mt * mt * p0.y + 2 * mt * t * p1.y + t * t * p2.y
+            };
+          } else if (curveType === 'cubic' && element.controlPoint2) {
+            const p3 = element.controlPoint2;
+            const mt = 1 - t;
+            const mt2 = mt * mt;
+            const mt3 = mt2 * mt;
+            const t2 = t * t;
+            const t3 = t2 * t;
+            point = {
+              x: mt3 * p0.x + 3 * mt2 * t * p1.x + 3 * mt * t2 * p3.x + t3 * p2.x,
+              y: mt3 * p0.y + 3 * mt2 * t * p1.y + 3 * mt * t2 * p3.y + t3 * p2.y
+            };
+          } else if (curveType === 's-curve') {
+            const dx = p2.x - p0.x;
+            const dy = p2.y - p0.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            const ctrlDx = p1.x - (p0.x + p2.x) / 2;
+            const ctrlDy = p1.y - (p0.y + p2.y) / 2;
+            const intensity = dist > 0 ? Math.sqrt(ctrlDx * ctrlDx + ctrlDy * ctrlDy) / dist : 0;
+
+            const cp1x = p0.x + dx * 0.33 + ctrlDy * intensity;
+            const cp1y = p0.y + dy * 0.33 - ctrlDx * intensity;
+            const cp2x = p0.x + dx * 0.67 - ctrlDy * intensity;
+            const cp2y = p0.y + dy * 0.67 + ctrlDx * intensity;
+
+            const mt = 1 - t;
+            const mt2 = mt * mt;
+            const mt3 = mt2 * mt;
+            const t2 = t * t;
+            const t3 = t2 * t;
+            point = {
+              x: mt3 * p0.x + 3 * mt2 * t * cp1x + 3 * mt * t2 * cp2x + t3 * p2.x,
+              y: mt3 * p0.y + 3 * mt2 * t * cp1y + 3 * mt * t2 * cp2y + t3 * p2.y
+            };
+          } else {
+            continue;
+          }
+
+          if (prevPoint) {
+            // Check for x-axis crossing (y = 0)
+            if ((prevPoint.y > 0 && point.y < 0) || (prevPoint.y < 0 && point.y > 0)) {
+              const crossT = Math.abs(prevPoint.y) / (Math.abs(prevPoint.y) + Math.abs(point.y));
+              const crossX = prevPoint.x + crossT * (point.x - prevPoint.x);
+              const canvas = graphToCanvas(crossX, 0);
+              const dist = Math.sqrt(
+                Math.pow(canvas.x - canvasX, 2) + Math.pow(canvas.y - canvasY, 2)
+              );
+
+              if (dist < HOVER_THRESHOLD) {
+                return { type: 'axisPoint', axis: 'x', position: crossX, elementId: i };
+              }
+            }
+
+            // Check for y-axis crossing (x = 0)
+            if ((prevPoint.x > 0 && point.x < 0) || (prevPoint.x < 0 && point.x > 0)) {
+              const crossT = Math.abs(prevPoint.x) / (Math.abs(prevPoint.x) + Math.abs(point.x));
+              const crossY = prevPoint.y + crossT * (point.y - prevPoint.y);
+              const canvas = graphToCanvas(0, crossY);
+              const dist = Math.sqrt(
+                Math.pow(canvas.x - canvasX, 2) + Math.pow(canvas.y - canvasY, 2)
+              );
+
+              if (dist < HOVER_THRESHOLD) {
+                return { type: 'axisPoint', axis: 'y', position: crossY, elementId: i };
+              }
+            }
+          }
+
+          prevPoint = point;
+        }
+      } else {
+        // For lines, freehand, and functions - check consecutive points
+        for (let j = 0; j < element.points.length - 1; j++) {
+          const p1 = element.points[j];
+          const p2 = element.points[j + 1];
+
+          // Check for x-axis crossing (y = 0)
+          if ((p1.y > 0 && p2.y < 0) || (p1.y < 0 && p2.y > 0)) {
+            const t = Math.abs(p1.y) / (Math.abs(p1.y) + Math.abs(p2.y));
+            const crossX = p1.x + t * (p2.x - p1.x);
+            const canvas = graphToCanvas(crossX, 0);
+            const dist = Math.sqrt(
+              Math.pow(canvas.x - canvasX, 2) + Math.pow(canvas.y - canvasY, 2)
+            );
+
+            if (dist < HOVER_THRESHOLD) {
+              return { type: 'axisPoint', axis: 'x', position: crossX, elementId: i };
+            }
+          }
+
+          // Check for y-axis crossing (x = 0)
+          if ((p1.x > 0 && p2.x < 0) || (p1.x < 0 && p2.x > 0)) {
+            const t = Math.abs(p1.x) / (Math.abs(p1.x) + Math.abs(p2.x));
+            const crossY = p1.y + t * (p2.y - p1.y);
+            const canvas = graphToCanvas(0, crossY);
+            const dist = Math.sqrt(
+              Math.pow(canvas.x - canvasX, 2) + Math.pow(canvas.y - canvasY, 2)
+            );
+
+            if (dist < HOVER_THRESHOLD) {
+              return { type: 'axisPoint', axis: 'y', position: crossY, elementId: i };
+            }
+          }
+        }
+      }
+    }
+
     // Check element endpoints
     for (let i = 0; i < elements.length; i++) {
       const element = elements[i];
@@ -803,7 +934,16 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       }
     }
 
-    // Check axis points (if near axis)
+    // Check origin point (0, 0)
+    const origin = graphToCanvas(0, 0);
+    const distToOrigin = Math.sqrt(
+      Math.pow(origin.x - canvasX, 2) + Math.pow(origin.y - canvasY, 2)
+    );
+    if (distToOrigin < HOVER_THRESHOLD) {
+      return { type: 'axisPoint', axis: 'x', position: 0 };
+    }
+
+    // Check generic axis points (if near axis but not on a specific curve)
     const graph = canvasToGraph(canvasX, canvasY);
     const AXIS_THRESHOLD = 0.2; // graph units
 
@@ -819,6 +959,185 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
 
   // Draw fill preview during boundary construction
   const drawFillPreview = useCallback((ctx: CanvasRenderingContext2D) => {
+    // In fill mode, show all clickable boundary points (even before any are selected)
+    // 1. Intersection points (if visible)
+    if (showIntersections) {
+      intersectionPoints.forEach((intersection, index) => {
+        if (intersection.visible === false) return;
+        const canvas = graphToCanvas(intersection.point.x, intersection.point.y);
+
+        ctx.beginPath();
+        ctx.arc(canvas.x, canvas.y, 4, 0, Math.PI * 2);
+        ctx.fillStyle = '#9b59b6';
+        ctx.fill();
+        ctx.strokeStyle = '#8e44ad';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      });
+    }
+
+    // 2. Element endpoints
+    elements.forEach((element, elemIndex) => {
+      if (element.type === 'point') return;
+
+      // Draw start and end points
+      [0, element.points.length - 1].forEach(pointIndex => {
+        const point = element.points[pointIndex];
+        const canvas = graphToCanvas(point.x, point.y);
+
+        ctx.beginPath();
+        ctx.arc(canvas.x, canvas.y, 4, 0, Math.PI * 2);
+        ctx.fillStyle = '#3498db';
+        ctx.fill();
+        ctx.strokeStyle = '#2980b9';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      });
+
+      // 3. Axis intersection points (where element crosses x or y axis)
+      if (element.type === 'bezier' && element.controlPoint) {
+        // For bezier curves, sample the curve to find axis crossings
+        const p0 = element.points[0];
+        const p2 = element.points[1];
+        const p1 = element.controlPoint;
+        const curveType = element.curveType || 'quadratic';
+
+        // Sample the curve at many points to find axis crossings
+        const samples = 100;
+        let prevPoint: Point | null = null;
+
+        for (let i = 0; i <= samples; i++) {
+          const t = i / samples;
+          let point: Point;
+
+          if (curveType === 'quadratic') {
+            const mt = 1 - t;
+            point = {
+              x: mt * mt * p0.x + 2 * mt * t * p1.x + t * t * p2.x,
+              y: mt * mt * p0.y + 2 * mt * t * p1.y + t * t * p2.y
+            };
+          } else if (curveType === 'cubic' && element.controlPoint2) {
+            const p3 = element.controlPoint2;
+            const mt = 1 - t;
+            const mt2 = mt * mt;
+            const mt3 = mt2 * mt;
+            const t2 = t * t;
+            const t3 = t2 * t;
+            point = {
+              x: mt3 * p0.x + 3 * mt2 * t * p1.x + 3 * mt * t2 * p3.x + t3 * p2.x,
+              y: mt3 * p0.y + 3 * mt2 * t * p1.y + 3 * mt * t2 * p3.y + t3 * p2.y
+            };
+          } else if (curveType === 's-curve') {
+            const dx = p2.x - p0.x;
+            const dy = p2.y - p0.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            const ctrlDx = p1.x - (p0.x + p2.x) / 2;
+            const ctrlDy = p1.y - (p0.y + p2.y) / 2;
+            const intensity = dist > 0 ? Math.sqrt(ctrlDx * ctrlDx + ctrlDy * ctrlDy) / dist : 0;
+
+            const cp1x = p0.x + dx * 0.33 + ctrlDy * intensity;
+            const cp1y = p0.y + dy * 0.33 - ctrlDx * intensity;
+            const cp2x = p0.x + dx * 0.67 - ctrlDy * intensity;
+            const cp2y = p0.y + dy * 0.67 + ctrlDx * intensity;
+
+            const mt = 1 - t;
+            const mt2 = mt * mt;
+            const mt3 = mt2 * mt;
+            const t2 = t * t;
+            const t3 = t2 * t;
+            point = {
+              x: mt3 * p0.x + 3 * mt2 * t * cp1x + 3 * mt * t2 * cp2x + t3 * p2.x,
+              y: mt3 * p0.y + 3 * mt2 * t * cp1y + 3 * mt * t2 * cp2y + t3 * p2.y
+            };
+          } else {
+            continue;
+          }
+
+          if (prevPoint) {
+            // Check for x-axis crossing (y = 0)
+            if ((prevPoint.y > 0 && point.y < 0) || (prevPoint.y < 0 && point.y > 0)) {
+              const crossT = Math.abs(prevPoint.y) / (Math.abs(prevPoint.y) + Math.abs(point.y));
+              const crossX = prevPoint.x + crossT * (point.x - prevPoint.x);
+              const canvas = graphToCanvas(crossX, 0);
+
+              ctx.beginPath();
+              ctx.arc(canvas.x, canvas.y, 4, 0, Math.PI * 2);
+              ctx.fillStyle = '#e74c3c';
+              ctx.fill();
+              ctx.strokeStyle = '#c0392b';
+              ctx.lineWidth = 1.5;
+              ctx.stroke();
+            }
+
+            // Check for y-axis crossing (x = 0)
+            if ((prevPoint.x > 0 && point.x < 0) || (prevPoint.x < 0 && point.x > 0)) {
+              const crossT = Math.abs(prevPoint.x) / (Math.abs(prevPoint.x) + Math.abs(point.x));
+              const crossY = prevPoint.y + crossT * (point.y - prevPoint.y);
+              const canvas = graphToCanvas(0, crossY);
+
+              ctx.beginPath();
+              ctx.arc(canvas.x, canvas.y, 4, 0, Math.PI * 2);
+              ctx.fillStyle = '#e74c3c';
+              ctx.fill();
+              ctx.strokeStyle = '#c0392b';
+              ctx.lineWidth = 1.5;
+              ctx.stroke();
+            }
+          }
+
+          prevPoint = point;
+        }
+      } else if (element.type !== 'point') {
+        // For lines, freehand, and functions - check consecutive points
+        for (let i = 0; i < element.points.length - 1; i++) {
+          const p1 = element.points[i];
+          const p2 = element.points[i + 1];
+
+          // Check for x-axis crossing (y = 0)
+          if ((p1.y > 0 && p2.y < 0) || (p1.y < 0 && p2.y > 0)) {
+            // Linear interpolation to find crossing point
+            const t = Math.abs(p1.y) / (Math.abs(p1.y) + Math.abs(p2.y));
+            const crossX = p1.x + t * (p2.x - p1.x);
+            const canvas = graphToCanvas(crossX, 0);
+
+            ctx.beginPath();
+            ctx.arc(canvas.x, canvas.y, 4, 0, Math.PI * 2);
+            ctx.fillStyle = '#e74c3c';
+            ctx.fill();
+            ctx.strokeStyle = '#c0392b';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+          }
+
+          // Check for y-axis crossing (x = 0)
+          if ((p1.x > 0 && p2.x < 0) || (p1.x < 0 && p2.x > 0)) {
+            // Linear interpolation to find crossing point
+            const t = Math.abs(p1.x) / (Math.abs(p1.x) + Math.abs(p2.x));
+            const crossY = p1.y + t * (p2.y - p1.y);
+            const canvas = graphToCanvas(0, crossY);
+
+            ctx.beginPath();
+            ctx.arc(canvas.x, canvas.y, 4, 0, Math.PI * 2);
+            ctx.fillStyle = '#e74c3c';
+            ctx.fill();
+            ctx.strokeStyle = '#c0392b';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+          }
+        }
+      }
+    });
+
+    // 4. Draw origin point (0, 0)
+    const origin = graphToCanvas(0, 0);
+    ctx.beginPath();
+    ctx.arc(origin.x, origin.y, 5, 0, Math.PI * 2);
+    ctx.fillStyle = '#e74c3c';
+    ctx.fill();
+    ctx.strokeStyle = '#c0392b';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
     if (fillToolState.currentBoundary.length === 0) return;
 
     // Draw selected points as highlighted dots
@@ -882,7 +1201,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
         // Skip invalid hovered point
       }
     }
-  }, [fillToolState, elements, intersectionPoints, graphToCanvas]);
+  }, [fillToolState, elements, intersectionPoints, graphToCanvas, showIntersections]);
 
   // Render everything
   const render = useCallback(() => {
@@ -1950,8 +2269,9 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
     const { x: canvasX, y: canvasY } = getCanvasCoordinates(e);
 
-    // Check if CTRL key is pressed
+    // Check if modifier keys are pressed
     const isCtrlPressed = 'ctrlKey' in e && e.ctrlKey;
+    const isShiftPressed = 'shiftKey' in e && e.shiftKey;
 
     // Handle fill mode clicks
     if (drawMode === 'fill') {
@@ -1971,17 +2291,22 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
 
             // If within 15px of first point and we have at least 3 points, close the fill
             if (dist < 15 && fillToolState.currentBoundary.length >= 3) {
+              // Store path preference if Shift key is held
+              const preferCurves = isShiftPressed; // Using Shift as the modifier
+              console.log('[Fill] Closing fill area, preferCurves:', preferCurves, 'shift:', isShiftPressed);
+
               // Trace final segment back to first point
               const finalSegment = traceBoundaryPath(
                 fillToolState.currentBoundary[fillToolState.currentBoundary.length - 1],
                 firstPoint,
                 elements,
-                intersectionPoints
+                intersectionPoints,
+                preferCurves
               );
 
               if (finalSegment) {
                 // Create fill area
-                const boundary = completeFill();
+                const { boundary, segments } = completeFill();
 
                 // Validate boundary has at least 3 points
                 if (boundary.length < 3) {
@@ -1989,9 +2314,13 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
                   return;
                 }
 
+                // Add the final segment that closes the loop
+                const allSegments = [...segments, finalSegment];
+
                 const newFillArea: NewFillArea = {
                   id: crypto.randomUUID(),
                   boundaryPoints: boundary,
+                  segments: allSegments,
                   color: strokeColor,
                   opacity: 0.3
                 };
@@ -2012,8 +2341,11 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
         // Add point to boundary
         if (fillToolState.currentBoundary.length > 0) {
           // Trace path from previous point
+          // Store path preference if Shift key is held
+          const preferCurves = isShiftPressed; // Using Shift as the modifier
+          console.log('[Fill] Adding point, preferCurves:', preferCurves, 'shift:', isShiftPressed);
           const previousPoint = fillToolState.currentBoundary[fillToolState.currentBoundary.length - 1];
-          const segment = traceBoundaryPath(previousPoint, clickedPoint, elements, intersectionPoints);
+          const segment = traceBoundaryPath(previousPoint, clickedPoint, elements, intersectionPoints, preferCurves);
 
           if (segment) {
             addBoundaryPoint(clickedPoint, segment);
@@ -3636,14 +3968,28 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
   // Keyboard event listener for copy/paste/delete
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Only handle if in select or textbox mode
-      if (drawMode !== 'select' && drawMode !== 'textbox') return;
-
       // Check if user is typing in an input field
       const target = e.target as HTMLElement;
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
         return; // Don't intercept
       }
+
+      // Handle Escape key to exit boundary edit mode or cancel fill
+      if (e.key === 'Escape') {
+        if (boundaryEditState.mode === 'editing') {
+          e.preventDefault();
+          stopEditingBoundary();
+          return;
+        }
+        if (drawMode === 'fill' && fillToolState.currentBoundary.length > 0) {
+          e.preventDefault();
+          resetFillTool();
+          return;
+        }
+      }
+
+      // Only handle copy/paste/delete if in select or textbox mode
+      if (drawMode !== 'select' && drawMode !== 'textbox') return;
 
       const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
       const cmdOrCtrl = isMac ? e.metaKey : e.ctrlKey;
@@ -3662,7 +4008,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [drawMode, handleCopy, handlePaste, handleDelete]);
+  }, [drawMode, handleCopy, handlePaste, handleDelete, boundaryEditState, stopEditingBoundary, fillToolState, resetFillTool]);
 
   const exportToPNG = useCallback(() => {
     const canvas = canvasRef.current;
