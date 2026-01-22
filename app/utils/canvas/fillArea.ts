@@ -462,12 +462,7 @@ export function traceBoundaryPath(
     if (sharedElement) {
       const element = elements[sharedElement.id];
       if (element) {
-        console.log(`[Fill] Found shared element ${sharedElement.id} (${element.type}) between points`, {
-          fromPoint,
-          toPoint,
-          fromCoord,
-          toCoord
-        });
+        console.log(`[Fill] Using element ${sharedElement.id} (${element.type}) from (${fromCoord.x.toFixed(2)}, ${fromCoord.y.toFixed(2)}) to (${toCoord.x.toFixed(2)}, ${toCoord.y.toFixed(2)})`);
         return {
           fromPoint,
           toPoint,
@@ -476,12 +471,7 @@ export function traceBoundaryPath(
         };
       }
     } else {
-      console.log('[Fill] No shared element found between points:', {
-        fromPoint,
-        toPoint,
-        fromElements: getAssociatedElements(fromPoint, elements, intersections),
-        toElements: getAssociatedElements(toPoint, elements, intersections)
-      });
+      console.log('[Fill] No shared element found, will try projection/axis path');
     }
 
     // Step 2: Check if connected via projection
@@ -991,25 +981,14 @@ function traceElementPath(
     const shortPathLength = Math.abs(t2 - t1);
     const longPathLength = 1.0 - shortPathLength;
 
-    // Always take the shorter path, but preserve the direction (from t1 to t2)
-    if (shortPathLength > 0.5) {
-      // The "short path" from t1 to t2 is actually > 0.5, which means
-      // we should go the other way around the curve
-      // Reverse by going from t2 toward t1 but wrapping around
-      // For now, fall back to full curve tracing
-      const goForward = isCloserToStart(fromPoint, element);
-      if (goForward) {
-        traceBezierForward(ctx, element, graphToCanvas);
-      } else {
-        traceBezierBackward(ctx, element, graphToCanvas);
-      }
-      return;
-    }
+    console.log(`[Fill] Bezier t-params: t1=${t1.toFixed(3)}, t2=${t2.toFixed(3)}`);
 
+    // Trace directly from t1 to t2 (no wrap-around since bezier curves aren't closed loops)
     // If t1 > t2, we need to trace backward
     const needsReverse = t1 > t2;
     if (needsReverse) {
       // Swap for subdivision, but we'll trace it backward
+      console.log(`[Fill] t1 > t2, swapping for subdivision (will trace backward)`);
       [t1, t2] = [t2, t1];
     }
 
