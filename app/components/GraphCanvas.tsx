@@ -2293,7 +2293,6 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
             if (dist < 15 && fillToolState.currentBoundary.length >= 3) {
               // Store path preference if Shift key is held
               const preferCurves = isShiftPressed; // Using Shift as the modifier
-              console.log('[Fill] Closing fill area, preferCurves:', preferCurves, 'shift:', isShiftPressed);
 
               // Trace final segment back to first point
               const finalSegment = traceBoundaryPath(
@@ -2343,7 +2342,6 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
           // Trace path from previous point
           // Store path preference if Shift key is held
           const preferCurves = isShiftPressed; // Using Shift as the modifier
-          console.log('[Fill] Adding point, preferCurves:', preferCurves, 'shift:', isShiftPressed);
           const previousPoint = fillToolState.currentBoundary[fillToolState.currentBoundary.length - 1];
           const segment = traceBoundaryPath(previousPoint, clickedPoint, elements, intersectionPoints, preferCurves);
 

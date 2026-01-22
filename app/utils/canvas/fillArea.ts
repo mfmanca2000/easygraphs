@@ -462,7 +462,6 @@ export function traceBoundaryPath(
     if (sharedElement) {
       const element = elements[sharedElement.id];
       if (element) {
-        console.log(`[Fill] Using element ${sharedElement.id} (${element.type}) from (${fromCoord.x.toFixed(2)}, ${fromCoord.y.toFixed(2)}) to (${toCoord.x.toFixed(2)}, ${toCoord.y.toFixed(2)})`);
         return {
           fromPoint,
           toPoint,
@@ -470,8 +469,6 @@ export function traceBoundaryPath(
           elementId: sharedElement.id
         };
       }
-    } else {
-      console.log('[Fill] No shared element found, will try projection/axis path');
     }
 
     // Step 2: Check if connected via projection
@@ -977,18 +974,11 @@ function traceElementPath(
       t2 = findBezierT(toPoint, p0, p1, p2, 'quadratic');
     }
 
-    // Determine which direction to trace along the curve
-    const shortPathLength = Math.abs(t2 - t1);
-    const longPathLength = 1.0 - shortPathLength;
-
-    console.log(`[Fill] Bezier t-params: t1=${t1.toFixed(3)}, t2=${t2.toFixed(3)}`);
-
-    // Trace directly from t1 to t2 (no wrap-around since bezier curves aren't closed loops)
+    // Trace directly from t1 to t2
     // If t1 > t2, we need to trace backward
     const needsReverse = t1 > t2;
     if (needsReverse) {
       // Swap for subdivision, but we'll trace it backward
-      console.log(`[Fill] t1 > t2, swapping for subdivision (will trace backward)`);
       [t1, t2] = [t2, t1];
     }
 
