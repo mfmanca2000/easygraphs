@@ -150,18 +150,25 @@ export function isPointInTextBox(
   canvasX: number,
   canvasY: number,
   textBox: TextBox,
-  graphToCanvas: (x: number, y: number) => Point
+  graphToCanvas: (x: number, y: number) => Point,
+  scale: { x: number; y: number }
 ): boolean {
   let x = textBox.x;
   let y = textBox.y;
+  let width = textBox.width;
+  let height = textBox.height;
+
   if (textBox.coordinateSystem === 'graph') {
     const canvasPoint = graphToCanvas(textBox.x, textBox.y);
     x = canvasPoint.x;
     y = canvasPoint.y;
+    // Convert dimensions from graph units to canvas pixels
+    width = textBox.width * scale.x;
+    height = textBox.height * scale.y;
   }
 
-  return canvasX >= x && canvasX <= x + textBox.width &&
-         canvasY >= y && canvasY <= y + textBox.height;
+  return canvasX >= x && canvasX <= x + width &&
+         canvasY >= y && canvasY <= y + height;
 }
 
 /**
@@ -171,22 +178,29 @@ export function getTextBoxResizeHandle(
   canvasX: number,
   canvasY: number,
   textBox: TextBox,
-  graphToCanvas: (x: number, y: number) => Point
+  graphToCanvas: (x: number, y: number) => Point,
+  scale: { x: number; y: number }
 ): 'ne' | 'se' | 'sw' | 'nw' | null {
   let x = textBox.x;
   let y = textBox.y;
+  let width = textBox.width;
+  let height = textBox.height;
+
   if (textBox.coordinateSystem === 'graph') {
     const canvasPoint = graphToCanvas(textBox.x, textBox.y);
     x = canvasPoint.x;
     y = canvasPoint.y;
+    // Convert dimensions from graph units to canvas pixels
+    width = textBox.width * scale.x;
+    height = textBox.height * scale.y;
   }
 
   const handleSize = 8;
   const corners = [
     { corner: 'nw' as const, x, y },
-    { corner: 'ne' as const, x: x + textBox.width, y },
-    { corner: 'se' as const, x: x + textBox.width, y: y + textBox.height },
-    { corner: 'sw' as const, x, y: y + textBox.height }
+    { corner: 'ne' as const, x: x + width, y },
+    { corner: 'se' as const, x: x + width, y: y + height },
+    { corner: 'sw' as const, x, y: y + height }
   ];
 
   for (const { corner, x: cx, y: cy } of corners) {

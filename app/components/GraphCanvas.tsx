@@ -569,30 +569,35 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     labels.textBoxes.forEach(textBox => {
       let x = textBox.x;
       let y = textBox.y;
+      let width = textBox.width;
+      let height = textBox.height;
 
       if (textBox.coordinateSystem === 'graph') {
         const canvasPoint = graphToCanvas(textBox.x, textBox.y);
         x = canvasPoint.x;
         y = canvasPoint.y;
+        // Convert dimensions from graph units to canvas pixels
+        width = textBox.width * scale.x;
+        height = textBox.height * scale.y;
       }
 
       // Selection highlight if selected
       if (selection.textBoxIds.has(textBox.id)) {
         ctx.fillStyle = 'rgba(230, 126, 34, 0.2)';
-        ctx.fillRect(x - 4, y - 4, textBox.width + 8, textBox.height + 8);
+        ctx.fillRect(x - 4, y - 4, width + 8, height + 8);
         ctx.strokeStyle = '#E67E22';
         ctx.lineWidth = 3;
-        ctx.strokeRect(x - 4, y - 4, textBox.width + 8, textBox.height + 8);
+        ctx.strokeRect(x - 4, y - 4, width + 8, height + 8);
       }
 
       // Background
       ctx.fillStyle = textBox.backgroundColor;
-      ctx.fillRect(x, y, textBox.width, textBox.height);
+      ctx.fillRect(x, y, width, height);
 
       // Border
       ctx.strokeStyle = textBox.borderColor;
       ctx.lineWidth = textBox.borderWidth;
-      ctx.strokeRect(x, y, textBox.width, textBox.height);
+      ctx.strokeRect(x, y, width, height);
 
       // Text with wrapping
       ctx.fillStyle = textBox.color;
@@ -600,7 +605,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       ctx.textBaseline = 'top';
       ctx.textAlign = 'left';
 
-      const lines = wrapText(ctx, textBox.text, textBox.width - textBox.padding * 2);
+      const lines = wrapText(ctx, textBox.text, width - textBox.padding * 2);
       const lineHeight = textBox.fontSize * 1.2;
 
       lines.forEach((line, i) => {
@@ -616,9 +621,9 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
 
         const corners = [
           { x, y },
-          { x: x + textBox.width, y },
-          { x: x + textBox.width, y: y + textBox.height },
-          { x, y: y + textBox.height }
+          { x: x + width, y },
+          { x: x + width, y: y + height },
+          { x, y: y + height }
         ];
 
         corners.forEach(corner => {
@@ -633,13 +638,13 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
 
   // Helper function to check if a point is inside a text box
   const isPointInTextBox = useCallback((canvasX: number, canvasY: number, textBox: TextBox): boolean => {
-    return isPointInTextBoxUtil(canvasX, canvasY, textBox, graphToCanvas);
-  }, [graphToCanvas]);
+    return isPointInTextBoxUtil(canvasX, canvasY, textBox, graphToCanvas, scale);
+  }, [graphToCanvas, scale]);
 
   // Helper function to get which resize handle is being clicked
   const getResizeHandle = useCallback((canvasX: number, canvasY: number, textBox: TextBox): 'ne' | 'se' | 'sw' | 'nw' | null => {
-    return getTextBoxResizeHandle(canvasX, canvasY, textBox, graphToCanvas);
-  }, [graphToCanvas]);
+    return getTextBoxResizeHandle(canvasX, canvasY, textBox, graphToCanvas, scale);
+  }, [graphToCanvas, scale]);
 
   // Helper function to find which text box was clicked
   const findClickedTextBox = useCallback((canvasX: number, canvasY: number): string | null => {
@@ -2517,13 +2522,15 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
           setSelection({ elementIds: new Set(), textBoxIds: new Set() });
         } else {
           // If no text box is selected, create a new one
+          // Convert canvas position to graph coordinates
+          const graphPos = canvasToGraph(canvasX, canvasY);
           const newTextBox: TextBox = {
             id: crypto.randomUUID(),
             text: 'New Text Box',
-            x: canvasX - 100, // Center the 200px wide box at click position
-            y: canvasY - 50,  // Center the 100px tall box at click position
-            width: 200,
-            height: 100,
+            x: graphPos.x - 100 / scale.x, // Center the box at click position in graph units
+            y: graphPos.y + 50 / scale.y,  // Center the box at click position in graph units
+            width: 200 / scale.x, // Store width in graph units
+            height: 100 / scale.y, // Store height in graph units
             fontFamily: 'DM Sans, sans-serif',
             fontSize: 14,
             color: '#1A2332',
@@ -2531,7 +2538,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
             borderColor: '#2B5F82',
             borderWidth: 2,
             padding: 10,
-            coordinateSystem: 'canvas'
+            coordinateSystem: 'graph'
           };
 
           const previousLabels = { ...labels };
@@ -2829,11 +2836,12 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
 
     // Handle text box dragging
     if (draggingTextBox) {
+      const graphPos = canvasToGraph(canvasX - textBoxDragOffset.x, canvasY - textBoxDragOffset.y);
       setLabels(prev => ({
         ...prev,
         textBoxes: prev.textBoxes.map(tb =>
           tb.id === draggingTextBox
-            ? { ...tb, x: canvasX - textBoxDragOffset.x, y: canvasY - textBoxDragOffset.y, coordinateSystem: 'canvas' as const }
+            ? { ...tb, x: graphPos.x, y: graphPos.y, coordinateSystem: 'graph' as const }
             : tb
         )
       }));
@@ -2883,11 +2891,16 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
         newW = Math.max(50, newW);
         newH = Math.max(30, newH);
 
+        // Convert canvas position and dimensions to graph coordinates
+        const graphPos = canvasToGraph(newX, newY);
+        const graphWidth = newW / scale.x;
+        const graphHeight = newH / scale.y;
+
         setLabels(prev => ({
           ...prev,
           textBoxes: prev.textBoxes.map(tb =>
             tb.id === resizingTextBox.id
-              ? { ...tb, x: newX, y: newY, width: newW, height: newH, coordinateSystem: 'canvas' as const }
+              ? { ...tb, x: graphPos.x, y: graphPos.y, width: graphWidth, height: graphHeight, coordinateSystem: 'graph' as const }
               : tb
           )
         }));
