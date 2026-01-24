@@ -55,6 +55,7 @@ import {
   traceBoundaryPath,
   drawBoundaryEditor,
   findClickedBoundaryVertex,
+  findProjectionElementIntersection,
   type BoundaryPoint,
   type FillArea as NewFillArea
 } from '@/app/utils/canvas/fillArea';
@@ -783,6 +784,59 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       }
     }
 
+    // Check manually inserted points (point elements) - prioritize these over other boundary points
+    for (let i = 0; i < elements.length; i++) {
+      const element = elements[i];
+      if (element.type !== 'point') continue;
+
+      const point = element.points[0];
+      const canvas = graphToCanvas(point.x, point.y);
+      const dist = Math.sqrt(
+        Math.pow(canvas.x - canvasX, 2) + Math.pow(canvas.y - canvasY, 2)
+      );
+
+      if (dist < HOVER_THRESHOLD) {
+        return { type: 'elementPoint', elementId: i, pointIndex: 0 };
+      }
+    }
+
+    // Check projection-element intersections (where projection lines from points meet other elements)
+    for (let i = 0; i < elements.length; i++) {
+      const pointElement = elements[i];
+      if (pointElement.type !== 'point' || !pointElement.showProjection) continue;
+
+      // Check both X and Y projections
+      for (const projectionAxis of ['x', 'y'] as const) {
+        for (let j = 0; j < elements.length; j++) {
+          if (i === j) continue; // Skip self
+          const otherElement = elements[j];
+          if (otherElement.type === 'point') continue; // Skip other point elements
+
+          const intersection = findProjectionElementIntersection(
+            pointElement,
+            projectionAxis,
+            otherElement
+          );
+
+          if (intersection) {
+            const canvas = graphToCanvas(intersection.x, intersection.y);
+            const dist = Math.sqrt(
+              Math.pow(canvas.x - canvasX, 2) + Math.pow(canvas.y - canvasY, 2)
+            );
+
+            if (dist < HOVER_THRESHOLD) {
+              return {
+                type: 'projectionIntersection',
+                pointElementId: i,
+                projectionAxis: projectionAxis,
+                intersectedElementId: j
+              };
+            }
+          }
+        }
+      }
+    }
+
     // Check axis crossing points for curves and lines (before checking generic endpoints)
     for (let i = 0; i < elements.length; i++) {
       const element = elements[i];
@@ -976,7 +1030,54 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       });
     }
 
-    // 2. Element endpoints
+    // 2. Manually inserted points (point elements) - show with green color
+    elements.forEach((element, elemIndex) => {
+      if (element.type !== 'point') return;
+
+      const point = element.points[0];
+      const canvas = graphToCanvas(point.x, point.y);
+
+      ctx.beginPath();
+      ctx.arc(canvas.x, canvas.y, 5, 0, Math.PI * 2);
+      ctx.fillStyle = '#27ae60';
+      ctx.fill();
+      ctx.strokeStyle = '#229954';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    });
+
+    // 2.5. Projection-element intersections - show with cyan color
+    elements.forEach((pointElement, pointIdx) => {
+      if (pointElement.type !== 'point' || !pointElement.showProjection) return;
+
+      // Check both X and Y projections
+      (['x', 'y'] as const).forEach(projectionAxis => {
+        elements.forEach((otherElement, otherIdx) => {
+          if (pointIdx === otherIdx) return; // Skip self
+          if (otherElement.type === 'point') return; // Skip other point elements
+
+          const intersection = findProjectionElementIntersection(
+            pointElement,
+            projectionAxis,
+            otherElement
+          );
+
+          if (intersection) {
+            const canvas = graphToCanvas(intersection.x, intersection.y);
+
+            ctx.beginPath();
+            ctx.arc(canvas.x, canvas.y, 4, 0, Math.PI * 2);
+            ctx.fillStyle = '#00bcd4'; // Cyan for projection intersections
+            ctx.fill();
+            ctx.strokeStyle = '#0097a7';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+          }
+        });
+      });
+    });
+
+    // 3. Element endpoints
     elements.forEach((element, elemIndex) => {
       if (element.type === 'point') return;
 
@@ -994,7 +1095,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
         ctx.stroke();
       });
 
-      // 3. Axis intersection points (where element crosses x or y axis)
+      // 4. Axis intersection points (where element crosses x or y axis)
       if (element.type === 'bezier' && element.controlPoint) {
         // For bezier curves, sample the curve to find axis crossings
         const p0 = element.points[0];
@@ -1128,7 +1229,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       }
     });
 
-    // 4. Draw origin point (0, 0)
+    // 5. Draw origin point (0, 0)
     const origin = graphToCanvas(0, 0);
     ctx.beginPath();
     ctx.arc(origin.x, origin.y, 5, 0, Math.PI * 2);

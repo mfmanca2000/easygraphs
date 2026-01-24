@@ -10,7 +10,8 @@ import { distance } from './geometry';
 export type BoundaryPoint =
   | { type: 'intersection'; intersectionIndex: number }
   | { type: 'elementPoint'; elementId: number; pointIndex: number }
-  | { type: 'axisPoint'; axis: 'x' | 'y'; position: number; elementId?: number };
+  | { type: 'axisPoint'; axis: 'x' | 'y'; position: number; elementId?: number }
+  | { type: 'projectionIntersection'; pointElementId: number; projectionAxis: 'x' | 'y'; intersectedElementId: number };
 
 /**
  * Represents a traced path between two boundary points
@@ -32,6 +33,125 @@ export interface FillArea {
   color: string;
   opacity: number;  // 0-1, default 0.3
   segments?: BoundarySegment[];  // cached path segments
+}
+
+/**
+ * Find where a projection line from a point intersects with an element
+ */
+export function findProjectionElementIntersection(
+  pointElement: GraphElement,
+  projectionAxis: 'x' | 'y',
+  intersectedElement: GraphElement
+): Point | null {
+  if (pointElement.type !== 'point' || pointElement.points.length < 1) {
+    return null;
+  }
+
+  const sourcePoint = pointElement.points[0];
+
+  // For vertical projection (projectionAxis = 'x'), the line is x = sourcePoint.x
+  // For horizontal projection (projectionAxis = 'y'), the line is y = sourcePoint.y
+
+  if (intersectedElement.type === 'line' && intersectedElement.points.length >= 2) {
+    const p1 = intersectedElement.points[0];
+    const p2 = intersectedElement.points[1];
+
+    if (projectionAxis === 'x') {
+      // Vertical line: x = sourcePoint.x
+      // Line parametric: x = p1.x + t*(p2.x - p1.x), y = p1.y + t*(p2.y - p1.y)
+      const dx = p2.x - p1.x;
+      if (Math.abs(dx) < 1e-10) return null; // Line is also vertical
+      const t = (sourcePoint.x - p1.x) / dx;
+      if (t >= 0 && t <= 1) {
+        return { x: sourcePoint.x, y: p1.y + t * (p2.y - p1.y) };
+      }
+    } else {
+      // Horizontal line: y = sourcePoint.y
+      const dy = p2.y - p1.y;
+      if (Math.abs(dy) < 1e-10) return null; // Line is also horizontal
+      const t = (sourcePoint.y - p1.y) / dy;
+      if (t >= 0 && t <= 1) {
+        return { x: p1.x + t * (p2.x - p1.x), y: sourcePoint.y };
+      }
+    }
+  } else if (intersectedElement.type === 'bezier' && intersectedElement.controlPoint) {
+    // Sample the bezier curve to find intersections with the projection line
+    const p0 = intersectedElement.points[0];
+    const p2 = intersectedElement.points[1];
+    const p1 = intersectedElement.controlPoint;
+    const curveType = intersectedElement.curveType || 'quadratic';
+
+    const samples = 200;
+    let closestPoint: Point | null = null;
+    let closestDist = Infinity;
+
+    for (let i = 0; i <= samples; i++) {
+      const t = i / samples;
+      let point: Point;
+
+      if (curveType === 'quadratic') {
+        const mt = 1 - t;
+        point = {
+          x: mt * mt * p0.x + 2 * mt * t * p1.x + t * t * p2.x,
+          y: mt * mt * p0.y + 2 * mt * t * p1.y + t * t * p2.y
+        };
+      } else if (curveType === 'cubic' && intersectedElement.controlPoint2) {
+        const p3 = intersectedElement.controlPoint2;
+        const mt = 1 - t;
+        const mt2 = mt * mt;
+        const mt3 = mt2 * mt;
+        const t2 = t * t;
+        const t3 = t2 * t;
+        point = {
+          x: mt3 * p0.x + 3 * mt2 * t * p1.x + 3 * mt * t2 * p3.x + t3 * p2.x,
+          y: mt3 * p0.y + 3 * mt2 * t * p1.y + 3 * mt * t2 * p3.y + t3 * p2.y
+        };
+      } else if (curveType === 's-curve') {
+        const dx = p2.x - p0.x;
+        const dy = p2.y - p0.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const ctrlDx = p1.x - (p0.x + p2.x) / 2;
+        const ctrlDy = p1.y - (p0.y + p2.y) / 2;
+        const intensity = dist > 0 ? Math.sqrt(ctrlDx * ctrlDx + ctrlDy * ctrlDy) / dist : 0;
+
+        const cp1x = p0.x + dx * 0.33 + ctrlDy * intensity;
+        const cp1y = p0.y + dy * 0.33 - ctrlDx * intensity;
+        const cp2x = p0.x + dx * 0.67 - ctrlDy * intensity;
+        const cp2y = p0.y + dy * 0.67 + ctrlDx * intensity;
+
+        const mt = 1 - t;
+        const mt2 = mt * mt;
+        const mt3 = mt2 * mt;
+        const t2 = t * t;
+        const t3 = t2 * t;
+        point = {
+          x: mt3 * p0.x + 3 * mt2 * t * cp1x + 3 * mt * t2 * cp2x + t3 * p2.x,
+          y: mt3 * p0.y + 3 * mt2 * t * cp1y + 3 * mt * t2 * cp2y + t3 * p2.y
+        };
+      } else {
+        continue;
+      }
+
+      // Check if this point is close to the projection line
+      const dist = projectionAxis === 'x'
+        ? Math.abs(point.x - sourcePoint.x)
+        : Math.abs(point.y - sourcePoint.y);
+
+      if (dist < closestDist) {
+        closestDist = dist;
+        closestPoint = projectionAxis === 'x'
+          ? { x: sourcePoint.x, y: point.y }
+          : { x: point.x, y: sourcePoint.y };
+      }
+    }
+
+    // Return the closest point if it's within a reasonable threshold
+    if (closestPoint && closestDist < 0.01) {
+      return closestPoint;
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -62,6 +182,18 @@ export function resolvePointCoordinates(
     point = bp.axis === 'x'
       ? { x: bp.position, y: 0 }
       : { x: 0, y: bp.position };
+  } else if (bp.type === 'projectionIntersection') {
+    const pointElement = elements[bp.pointElementId];
+    const intersectedElement = elements[bp.intersectedElementId];
+    const intersection = findProjectionElementIntersection(
+      pointElement,
+      bp.projectionAxis,
+      intersectedElement
+    );
+    if (!intersection) {
+      throw new Error(`Could not find projection intersection`);
+    }
+    point = intersection;
   } else {
     throw new Error('Unknown boundary point type');
   }
@@ -101,6 +233,13 @@ export function getAssociatedElements(
   if (bp.type === 'axisPoint' && bp.elementId !== undefined) {
     if (bp.elementId >= 0 && bp.elementId < elements.length) {
       return [bp.elementId];
+    }
+  }
+
+  // Projection intersections are associated with the intersected element
+  if (bp.type === 'projectionIntersection') {
+    if (bp.intersectedElementId >= 0 && bp.intersectedElementId < elements.length) {
+      return [bp.intersectedElementId];
     }
   }
 
