@@ -82,8 +82,8 @@ export function findProjectionElementIntersection(
     const curveType = intersectedElement.curveType || 'quadratic';
 
     const samples = 200;
-    let closestPoint: Point | null = null;
-    let closestDist = Infinity;
+    const intersections: Point[] = [];
+    let prevPoint: Point | null = null;
 
     for (let i = 0; i <= samples; i++) {
       const t = i / samples;
@@ -132,22 +132,101 @@ export function findProjectionElementIntersection(
         continue;
       }
 
-      // Check if this point is close to the projection line
-      const dist = projectionAxis === 'x'
-        ? Math.abs(point.x - sourcePoint.x)
-        : Math.abs(point.y - sourcePoint.y);
+      // Check if the projection line crosses between prevPoint and point
+      if (prevPoint) {
+        let crosses = false;
+        let interpolationRatio = 0;
 
-      if (dist < closestDist) {
-        closestDist = dist;
-        closestPoint = projectionAxis === 'x'
-          ? { x: sourcePoint.x, y: point.y }
-          : { x: point.x, y: sourcePoint.y };
+        if (projectionAxis === 'x') {
+          // Vertical projection line at x = sourcePoint.x
+          // Check if it crosses between prevPoint and point
+          const prevDiff = prevPoint.x - sourcePoint.x;
+          const currDiff = point.x - sourcePoint.x;
+          if (prevDiff * currDiff <= 0) { // Sign change or exact match
+            crosses = true;
+            const dx = point.x - prevPoint.x;
+            if (Math.abs(dx) > 1e-10) {
+              interpolationRatio = (sourcePoint.x - prevPoint.x) / dx;
+            }
+          }
+        } else {
+          // Horizontal projection line at y = sourcePoint.y
+          const prevDiff = prevPoint.y - sourcePoint.y;
+          const currDiff = point.y - sourcePoint.y;
+          if (prevDiff * currDiff <= 0) { // Sign change or exact match
+            crosses = true;
+            const dy = point.y - prevPoint.y;
+            if (Math.abs(dy) > 1e-10) {
+              interpolationRatio = (sourcePoint.y - prevPoint.y) / dy;
+            }
+          }
+        }
+
+        if (crosses) {
+          // Interpolate to find the exact intersection point
+          const intersectionPoint = projectionAxis === 'x'
+            ? { x: sourcePoint.x, y: prevPoint.y + interpolationRatio * (point.y - prevPoint.y) }
+            : { x: prevPoint.x + interpolationRatio * (point.x - prevPoint.x), y: sourcePoint.y };
+          intersections.push(intersectionPoint);
+        }
+      }
+
+      prevPoint = point;
+    }
+
+    // Return the first intersection found (there may be multiple)
+    if (intersections.length > 0) {
+      return intersections[0];
+    }
+  } else if (intersectedElement.type === 'freehand' || intersectedElement.type === 'function') {
+    // For freehand and function curves, use the sampled points
+    if (intersectedElement.points.length < 2) return null;
+
+    const intersections: Point[] = [];
+
+    for (let i = 0; i < intersectedElement.points.length - 1; i++) {
+      const p1 = intersectedElement.points[i];
+      const p2 = intersectedElement.points[i + 1];
+
+      let crosses = false;
+      let interpolationRatio = 0;
+
+      if (projectionAxis === 'x') {
+        // Vertical projection line at x = sourcePoint.x
+        const prevDiff = p1.x - sourcePoint.x;
+        const currDiff = p2.x - sourcePoint.x;
+        if (prevDiff * currDiff <= 0) { // Sign change or exact match
+          crosses = true;
+          const dx = p2.x - p1.x;
+          if (Math.abs(dx) > 1e-10) {
+            interpolationRatio = (sourcePoint.x - p1.x) / dx;
+          }
+        }
+      } else {
+        // Horizontal projection line at y = sourcePoint.y
+        const prevDiff = p1.y - sourcePoint.y;
+        const currDiff = p2.y - sourcePoint.y;
+        if (prevDiff * currDiff <= 0) { // Sign change or exact match
+          crosses = true;
+          const dy = p2.y - p1.y;
+          if (Math.abs(dy) > 1e-10) {
+            interpolationRatio = (sourcePoint.y - p1.y) / dy;
+          }
+        }
+      }
+
+      if (crosses) {
+        // Interpolate to find the exact intersection point
+        const intersectionPoint = projectionAxis === 'x'
+          ? { x: sourcePoint.x, y: p1.y + interpolationRatio * (p2.y - p1.y) }
+          : { x: p1.x + interpolationRatio * (p2.x - p1.x), y: sourcePoint.y };
+        intersections.push(intersectionPoint);
       }
     }
 
-    // Return the closest point if it's within a reasonable threshold
-    if (closestPoint && closestDist < 0.01) {
-      return closestPoint;
+    // Return the first intersection found (there may be multiple)
+    if (intersections.length > 0) {
+      return intersections[0];
     }
   }
 
