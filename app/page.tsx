@@ -546,20 +546,26 @@ export default function Home() {
     setShowIntersections(newShowIntersections);
 
     if (newShowIntersections && canvasRef.current) {
-      // Calculate intersections when turning on
-      const intersections = canvasRef.current.calculateAllIntersections();
-      setIntersectionPoints(intersections);
+      // Calculate intersections when turning on, preserving existing states
+      const newIntersections = canvasRef.current.calculateAllIntersections();
+      setIntersectionPoints(prev => {
+        const updatedIntersections = newIntersections.map(newInt => {
+          const existing = prev.find(
+            oldInt =>
+              (oldInt.elementId1 === newInt.elementId1 && oldInt.elementId2 === newInt.elementId2) ||
+              (oldInt.elementId1 === newInt.elementId2 && oldInt.elementId2 === newInt.elementId1)
+          );
+          return {
+            ...newInt,
+            showProjection: existing?.showProjection ?? false,
+            visible: existing?.visible ?? true
+          };
+        });
+        return updatedIntersections;
+      });
     }
     // Note: We keep intersectionPoints even when hiding them, so fill areas continue to work
   };
-
-  // Auto-calculate intersections when elements change (for fill areas to work)
-  useEffect(() => {
-    if (canvasRef.current && elements.length > 0) {
-      const intersections = canvasRef.current.calculateAllIntersections();
-      setIntersectionPoints(intersections);
-    }
-  }, [elements]);
 
   const handleToggleIntersectionProjection = (intersectionIndex: number) => {
     setIntersectionPoints(prev => {
