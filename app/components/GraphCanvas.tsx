@@ -102,6 +102,8 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
   } = props;
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const editTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const editElementLabelTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Custom hooks for state management
   const {
@@ -180,8 +182,16 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     setResizingTextBox,
     textBoxDragOffset,
     setTextBoxDragOffset,
+    editingTextBoxId,
+    setEditingTextBoxId,
     selectedElementLabelIndex,
     setSelectedElementLabelIndex,
+    editingElementLabelIndex,
+    setEditingElementLabelIndex,
+    resizingElementLabelIndex,
+    setResizingElementLabelIndex,
+    elementLabelResizeStart,
+    setElementLabelResizeStart,
     draggingElementLabel,
     setDraggingElementLabel,
     selectedIntersectionLabelIndex,
@@ -519,6 +529,19 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
         ctx.strokeStyle = '#E67E22';
         ctx.lineWidth = 2;
         ctx.strokeRect(labelX - 2, labelY - textHeight - 2, textWidth + 4, textHeight + 4);
+
+        // Draw resize handle at bottom-right corner
+        const handleSize = 8;
+        const handleX = labelX + textWidth + 2;
+        const handleY = labelY + 2;
+
+        ctx.fillStyle = '#E67E22';
+        ctx.strokeStyle = '#FFFFFF';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(handleX, handleY, handleSize, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
       }
 
       ctx.fillStyle = label.color;
@@ -706,6 +729,51 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     }
     return null;
   }, [labels.elementLabels, isPointInElementLabel]);
+
+  // Helper function to check if clicking on element label resize handle
+  const isClickingElementLabelResizeHandle = useCallback((canvasX: number, canvasY: number, labelIndex: number): boolean => {
+    const label = labels.elementLabels[labelIndex];
+    if (!label) return false;
+
+    const element = elements[label.elementId];
+    if (!element) return false;
+
+    let refPoint: Point;
+    // Determine reference point based on element type
+    if (element.type === 'point') {
+      refPoint = element.points[0];
+    } else if (element.type === 'line' || element.type === 'bezier') {
+      refPoint = {
+        x: (element.points[0].x + element.points[1].x) / 2,
+        y: (element.points[0].y + element.points[1].y) / 2
+      };
+    } else {
+      refPoint = element.points[Math.floor(element.points.length / 2)];
+    }
+
+    const canvasPoint = graphToCanvas(refPoint.x, refPoint.y);
+    const labelX = canvasPoint.x + label.offsetX;
+    const labelY = canvasPoint.y + label.offsetY;
+
+    // Get text dimensions
+    const canvas = canvasRef.current;
+    if (!canvas) return false;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return false;
+
+    ctx.font = `${label.fontSize}px ${label.fontFamily}`;
+    const textMetrics = ctx.measureText(label.text);
+    const textWidth = textMetrics.width;
+
+    // Check if clicking on resize handle (bottom-right corner)
+    const handleX = labelX + textWidth + 2;
+    const handleY = labelY + 2;
+    const handleSize = 8; // Visual size
+    const clickRadius = 20; // Larger click detection area for easier interaction (covers entire visible circle plus extra margin)
+
+    const dist = Math.sqrt(Math.pow(canvasX - handleX, 2) + Math.pow(canvasY - handleY, 2));
+    return dist <= clickRadius;
+  }, [labels.elementLabels, elements, graphToCanvas]);
 
   // Helper function to check if a point is inside an intersection label
   const isPointInIntersectionLabel = useCallback((canvasX: number, canvasY: number, label: IntersectionLabel, index: number): boolean => {
@@ -2243,6 +2311,11 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
   };
 
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    // Don't handle clicks if we're editing a textbox or element label
+    if (editingTextBoxId || editingElementLabelIndex !== null) {
+      return;
+    }
+
     // Ignore clicks when panning or just after panning
     if (isPanning || justPannedRef.current) {
       justPannedRef.current = false;
@@ -2372,8 +2445,37 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     onCoordinateClick?.(point);
   };
 
+  const handleDoubleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const { x: canvasX, y: canvasY } = getCanvasCoordinates(e);
+
+    // Check if an element label was double-clicked
+    const clickedElementLabelIndex = findClickedElementLabel(canvasX, canvasY);
+    if (clickedElementLabelIndex !== null) {
+      // Enter edit mode for this element label
+      setEditingElementLabelIndex(clickedElementLabelIndex);
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+
+    // Check if a textbox was double-clicked
+    const clickedTextBoxId = findClickedTextBox(canvasX, canvasY);
+    if (clickedTextBoxId) {
+      // Enter edit mode for this textbox
+      setEditingTextBoxId(clickedTextBoxId);
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+  };
+
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
     const { x: canvasX, y: canvasY } = getCanvasCoordinates(e);
+
+    // Don't handle mouse events if we're editing a textbox or element label
+    if (editingTextBoxId || editingElementLabelIndex !== null) {
+      return;
+    }
 
     // Check if modifier keys are pressed
     const isCtrlPressed = 'ctrlKey' in e && e.ctrlKey;
@@ -2607,6 +2709,17 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     // Check for element label clicks (works in all modes)
     const clickedElementLabelIndex = findClickedElementLabel(canvasX, canvasY);
     if (clickedElementLabelIndex !== null) {
+      // Check if clicking on resize handle
+      if (selectedElementLabelIndex === clickedElementLabelIndex &&
+          isClickingElementLabelResizeHandle(canvasX, canvasY, clickedElementLabelIndex)) {
+        const label = labels.elementLabels[clickedElementLabelIndex];
+        setResizingElementLabelIndex(clickedElementLabelIndex);
+        setElementLabelResizeStart({ canvasY, initialFontSize: label.fontSize });
+        // Save current labels state for undo
+        labelsDragStartRef.current = { ...labels };
+        return;
+      }
+
       setSelectedElementLabelIndex(clickedElementLabelIndex);
       setDraggingElementLabel(clickedElementLabelIndex);
       // Save current labels state for undo
@@ -2671,6 +2784,11 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
   };
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    // Don't handle mouse move if we're editing a textbox or element label
+    if (editingTextBoxId || editingElementLabelIndex !== null) {
+      return;
+    }
+
     const { x: canvasX, y: canvasY } = getCanvasCoordinates(e);
     const firstElementId = Array.from(selection.elementIds)[0];
 
@@ -2933,6 +3051,26 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       return;
     }
 
+    // Handle element label resizing
+    if (resizingElementLabelIndex !== null && elementLabelResizeStart) {
+      const label = labels.elementLabels[resizingElementLabelIndex];
+      if (label) {
+        // Calculate font size change based on vertical mouse movement
+        const deltaY = canvasY - elementLabelResizeStart.canvasY;
+        const newFontSize = Math.max(8, Math.min(72, elementLabelResizeStart.initialFontSize + deltaY * 0.5));
+
+        setLabels(prev => ({
+          ...prev,
+          elementLabels: prev.elementLabels.map((lbl, idx) =>
+            idx === resizingElementLabelIndex
+              ? { ...lbl, fontSize: Math.round(newFontSize) }
+              : lbl
+          )
+        }));
+      }
+      return;
+    }
+
     // Handle element label dragging
     if (draggingElementLabel !== null) {
       const label = labels.elementLabels[draggingElementLabel];
@@ -3082,6 +3220,23 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
         labelsDragStartRef.current = null;
       }
       setDraggingIntersectionLabel(null);
+
+      // Notify parent component
+      if (onLabelsChange) {
+        onLabelsChange(labels);
+      }
+      return;
+    }
+
+    // Handle element label resize completion
+    if (resizingElementLabelIndex !== null) {
+      if (labelsDragStartRef.current) {
+        setActionHistory(prev => [...prev, { type: 'label', previousState: labelsDragStartRef.current! }]);
+        setRedoHistory([]);
+        labelsDragStartRef.current = null;
+      }
+      setResizingElementLabelIndex(null);
+      setElementLabelResizeStart(null);
 
       // Notify parent component
       if (onLabelsChange) {
@@ -3387,19 +3542,18 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
           newElements.splice(id, 0, element);
         });
 
-        const newLabels = {
-          ...labels,
-          textBoxes: [...labels.textBoxes, ...lastAction.deletedTextBoxes]
-        };
+        // Store current labels state for redo
+        const currentLabels = { ...labels };
 
         setElements(newElements);
-        setLabels(newLabels);
+        setLabels(lastAction.previousLabels); // Restore entire labels state
 
         // Add to redo history
         setRedoHistory(prev => [...prev, {
           type: 'delete',
           deletedElements: lastAction.deletedElements,
           deletedTextBoxes: lastAction.deletedTextBoxes,
+          previousLabels: currentLabels, // Store current state for redo
           previousElementsLength: lastAction.previousElementsLength
         }]);
       } else if (lastAction.type === 'group') {
@@ -3492,24 +3646,24 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
         }]);
       } else if (lastRedoAction.type === 'delete') {
         // Redo delete
-        const deleteAction = lastRedoAction as Action & { deletedElements: {id: number, element: GraphElement}[]; deletedTextBoxes: TextBox[]; previousElementsLength: number };
+        const deleteAction = lastRedoAction as Action & { deletedElements: {id: number, element: GraphElement}[]; deletedTextBoxes: TextBox[]; previousLabels: GraphLabels; previousElementsLength: number };
 
         const newElements = [...elements];
         deleteAction.deletedElements.forEach(({ id }) => {
           newElements.splice(id, 1);
         });
 
-        const newTextBoxes = labels.textBoxes.filter(
-          tb => !deleteAction.deletedTextBoxes.find(dtb => dtb.id === tb.id)
-        );
+        // Store current labels for undo
+        const currentLabels = { ...labels };
 
         setElements(newElements);
-        setLabels(prev => ({ ...prev, textBoxes: newTextBoxes }));
+        setLabels(deleteAction.previousLabels); // Restore labels to state after delete
 
         setActionHistory(prev => [...prev, {
           type: 'delete',
           deletedElements: deleteAction.deletedElements,
           deletedTextBoxes: deleteAction.deletedTextBoxes,
+          previousLabels: currentLabels, // Store current state for undo
           previousElementsLength: deleteAction.previousElementsLength
         }]);
       } else if (lastRedoAction.type === 'group') {
@@ -4056,14 +4210,42 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
 
     setFillAreas(updatedFillAreas);
 
+    // Update element labels: remove labels for deleted elements and adjust element IDs
+    const updatedElementLabels = labels.elementLabels
+      .filter(label => !deletedIds.has(label.elementId)) // Remove labels for deleted elements
+      .map(label => {
+        // Adjust element ID for labels referencing elements after deleted ones
+        const deletedBefore = Array.from(deletedIds).filter(delId => delId < label.elementId).length;
+        return {
+          ...label,
+          elementId: label.elementId - deletedBefore
+        };
+      });
+
+    // Update intersection labels: remove labels for deleted intersections and adjust indices
+    const updatedIntersectionLabels = labels.intersectionLabels.filter(label => {
+      // Check if this intersection still exists
+      return label.intersectionIndex < intersectionPoints.length;
+    });
+
+    const updatedLabels = {
+      ...labels,
+      textBoxes: newTextBoxes,
+      elementLabels: updatedElementLabels,
+      intersectionLabels: updatedIntersectionLabels
+    };
+
+    setLabels(updatedLabels);
+
     // Clear selection
     setSelection({ elementIds: new Set(), textBoxIds: new Set() });
 
-    // Add to history
+    // Add to history (store previous labels state for proper undo/redo)
     setActionHistory(prev => [...prev, {
       type: 'delete',
       deletedElements,
       deletedTextBoxes,
+      previousLabels: labels, // Store entire labels state for undo
       previousElementsLength: elements.length
     }]);
     setRedoHistory([]);
@@ -4072,8 +4254,8 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     if (onElementsChange) {
       onElementsChange(newElements.length);
     }
-    if (onLabelsChange && deletedTextBoxes.length > 0) {
-      onLabelsChange({ ...labels, textBoxes: newTextBoxes });
+    if (onLabelsChange) {
+      onLabelsChange(updatedLabels);
     }
   }, [selection, elements, labels, onElementsChange, onLabelsChange]);
 
@@ -4455,43 +4637,257 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     }
   }), [addLineByCoordinates, addPointByCoordinates, addFunction, clearCanvas, undo, redo, elements, exportToPNG, exportToJPEG, exportToPDF, getSelectedElement, getSelectedElementId, updateSelectedElement, addModifyAction, getExportData, importData, togglePointProjection, calculateAllIntersections, getLabels, updateLabels, addTextBox, deleteTextBox, selectTextBox, handleCopy, handlePaste, handleDelete, selection, handleGroup, handleUngroup, groups, fillAreas, scale, getTitleOffset, startEditingBoundary, stopEditingBoundary]);
 
+  // Get the textbox being edited for the overlay
+  const editingTextBox = editingTextBoxId
+    ? labels.textBoxes.find(tb => tb.id === editingTextBoxId)
+    : null;
+
+  // Calculate canvas position for the textarea overlay
+  let textareaStyle: React.CSSProperties = {};
+  if (editingTextBox && canvasRef.current) {
+    let x = editingTextBox.x;
+    let y = editingTextBox.y;
+    let width = editingTextBox.width;
+    let height = editingTextBox.height;
+
+    if (editingTextBox.coordinateSystem === 'graph') {
+      const canvasPoint = graphToCanvas(editingTextBox.x, editingTextBox.y);
+      x = canvasPoint.x;
+      y = canvasPoint.y;
+      width = editingTextBox.width * scale.x;
+      height = editingTextBox.height * scale.y;
+    }
+
+    // Account for canvas border (2px)
+    const borderWidth = 2;
+
+    textareaStyle = {
+      position: 'absolute',
+      left: `${x + borderWidth}px`,
+      top: `${y + borderWidth}px`,
+      width: `${width}px`,
+      height: `${height}px`,
+      fontFamily: editingTextBox.fontFamily,
+      fontSize: `${editingTextBox.fontSize}px`,
+      color: editingTextBox.color,
+      backgroundColor: editingTextBox.backgroundColor,
+      border: `${editingTextBox.borderWidth}px solid ${editingTextBox.borderColor}`,
+      padding: `${editingTextBox.padding}px`,
+      resize: 'none',
+      outline: 'none',
+      boxSizing: 'border-box',
+      zIndex: 1000,
+      lineHeight: '1.2'
+    };
+  }
+
+  // Get the element label being edited for the overlay
+  const editingElementLabel = editingElementLabelIndex !== null
+    ? labels.elementLabels[editingElementLabelIndex]
+    : null;
+
+  // Calculate canvas position for the element label textarea overlay
+  let elementLabelTextareaStyle: React.CSSProperties = {};
+  if (editingElementLabel && canvasRef.current) {
+    const element = elements[editingElementLabel.elementId];
+    if (element) {
+      let refPoint: Point;
+      // Determine reference point based on element type
+      if (element.type === 'point') {
+        refPoint = element.points[0];
+      } else if (element.type === 'line' || element.type === 'bezier') {
+        refPoint = {
+          x: (element.points[0].x + element.points[1].x) / 2,
+          y: (element.points[0].y + element.points[1].y) / 2
+        };
+      } else {
+        refPoint = element.points[Math.floor(element.points.length / 2)];
+      }
+
+      const canvasPoint = graphToCanvas(refPoint.x, refPoint.y);
+      const labelX = canvasPoint.x + editingElementLabel.offsetX;
+      const labelY = canvasPoint.y + editingElementLabel.offsetY;
+
+      // Estimate text dimensions
+      const fontSize = editingElementLabel.fontSize;
+      const textHeight = fontSize * 1.2; // Approximate height with some padding
+
+      // Account for canvas border (2px)
+      const borderWidth = 2;
+
+      // Since textBaseline is 'bottom', the y coordinate is at the bottom of the text
+      // So the top of the textarea should be at labelY - textHeight
+      elementLabelTextareaStyle = {
+        position: 'absolute',
+        left: `${labelX + borderWidth}px`,
+        top: `${labelY - textHeight + borderWidth}px`,
+        minWidth: '60px',
+        fontFamily: editingElementLabel.fontFamily,
+        fontSize: `${fontSize}px`,
+        color: editingElementLabel.color,
+        backgroundColor: 'rgba(255, 255, 255, 0.95)',
+        border: '2px solid #E67E22',
+        padding: '2px 4px',
+        resize: 'none',
+        outline: 'none',
+        boxSizing: 'border-box',
+        zIndex: 1000,
+        lineHeight: '1.2',
+        overflow: 'hidden',
+        whiteSpace: 'nowrap'
+      };
+    }
+  }
+
+  // Auto-focus the textarea when it appears
+  useEffect(() => {
+    if (editingTextBoxId && editTextareaRef.current) {
+      editTextareaRef.current.focus();
+      editTextareaRef.current.select();
+    }
+  }, [editingTextBoxId]);
+
+  // Auto-focus the element label textarea when it appears
+  useEffect(() => {
+    if (editingElementLabelIndex !== null && editElementLabelTextareaRef.current) {
+      editElementLabelTextareaRef.current.focus();
+      editElementLabelTextareaRef.current.select();
+      // Auto-resize the textarea to fit content
+      const textarea = editElementLabelTextareaRef.current;
+      textarea.style.width = 'auto';
+      textarea.style.width = `${Math.max(60, textarea.scrollWidth + 10)}px`;
+    }
+  }, [editingElementLabelIndex]);
+
+  // Handle textarea changes
+  const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    if (!editingTextBoxId) return;
+
+    setLabels(prev => ({
+      ...prev,
+      textBoxes: prev.textBoxes.map(tb =>
+        tb.id === editingTextBoxId ? { ...tb, text: e.target.value } : tb
+      )
+    }));
+  };
+
+  // Handle element label textarea changes
+  const handleElementLabelTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    if (editingElementLabelIndex === null) return;
+
+    setLabels(prev => ({
+      ...prev,
+      elementLabels: prev.elementLabels.map((lbl, idx) =>
+        idx === editingElementLabelIndex ? { ...lbl, text: e.target.value } : lbl
+      )
+    }));
+
+    // Auto-resize the textarea to fit content
+    const textarea = e.target;
+    textarea.style.width = 'auto';
+    textarea.style.width = `${Math.max(60, textarea.scrollWidth + 10)}px`;
+  };
+
+  // Handle exiting edit mode
+  const exitEditMode = () => {
+    if (editingTextBoxId) {
+      // Add to history when done editing
+      onLabelsChange?.(labels, true);
+      setEditingTextBoxId(null);
+    }
+    if (editingElementLabelIndex !== null) {
+      // Add to history when done editing
+      onLabelsChange?.(labels, true);
+      setEditingElementLabelIndex(null);
+    }
+  };
+
+  // Handle textarea blur
+  const handleTextareaBlur = () => {
+    exitEditMode();
+  };
+
+  // Handle textarea key down
+  const handleTextareaKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Escape') {
+      exitEditMode();
+      e.preventDefault();
+    } else if (e.key === 'Enter' && !e.shiftKey) {
+      // Enter without Shift: exit edit mode
+      exitEditMode();
+      e.preventDefault();
+    }
+    // Shift+Enter will insert a newline (default behavior)
+
+    // Prevent event from bubbling to canvas
+    e.stopPropagation();
+  };
+
   return (
-    <canvas
-      ref={canvasRef}
-      width={width}
-      height={height}
-      className="touch-none rounded"
-      style={{
-        border: '2px solid var(--canvas-border)',
-        boxShadow: 'inset 0 0 0 1px rgba(255, 255, 255, 0.5)',
-        cursor: isPanning ? 'grabbing' : 'crosshair'
-      }}
-      onClick={handleCanvasClick}
-      onContextMenu={handleContextMenu}
-      onMouseDown={handleMouseDown}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
-      onTouchStart={(e) => {
-        e.preventDefault();
-        handleTouchStartForLongPress(e);
-        handleMouseDown(e);
-        // For touch devices, also handle click logic on touch start
-        if (drawMode === 'line' || drawMode === 'bezier' || drawMode === 'select' || drawMode === 'point') {
-          handleCanvasClick(e);
-        }
-      }}
-      onTouchMove={(e) => {
-        e.preventDefault();
-        handleTouchMoveForLongPress();
-        handleMouseMove(e);
-      }}
-      onTouchEnd={(e) => {
-        e.preventDefault();
-        handleTouchEndForLongPress();
-        handleMouseUp();
-      }}
-    />
+    <div style={{ position: 'relative', display: 'inline-block' }}>
+      <canvas
+        ref={canvasRef}
+        width={width}
+        height={height}
+        className="touch-none rounded"
+        style={{
+          border: '2px solid var(--canvas-border)',
+          boxShadow: 'inset 0 0 0 1px rgba(255, 255, 255, 0.5)',
+          cursor: isPanning ? 'grabbing' : 'crosshair'
+        }}
+        onClick={handleCanvasClick}
+        onContextMenu={handleContextMenu}
+        onDoubleClick={handleDoubleClick}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+        onTouchStart={(e) => {
+          e.preventDefault();
+          handleTouchStartForLongPress(e);
+          handleMouseDown(e);
+          // For touch devices, also handle click logic on touch start
+          if (drawMode === 'line' || drawMode === 'bezier' || drawMode === 'select' || drawMode === 'point') {
+            handleCanvasClick(e);
+          }
+        }}
+        onTouchMove={(e) => {
+          e.preventDefault();
+          handleTouchMoveForLongPress();
+          handleMouseMove(e);
+        }}
+        onTouchEnd={(e) => {
+          e.preventDefault();
+          handleTouchEndForLongPress();
+          handleMouseUp();
+        }}
+      />
+
+      {/* In-place textarea editor for textboxes */}
+      {editingTextBox && (
+        <textarea
+          ref={editTextareaRef}
+          value={editingTextBox.text}
+          onChange={handleTextareaChange}
+          onBlur={handleTextareaBlur}
+          onKeyDown={handleTextareaKeyDown}
+          style={textareaStyle}
+        />
+      )}
+
+      {/* In-place textarea editor for element labels */}
+      {editingElementLabel && (
+        <textarea
+          ref={editElementLabelTextareaRef}
+          value={editingElementLabel.text}
+          onChange={handleElementLabelTextareaChange}
+          onBlur={handleTextareaBlur}
+          onKeyDown={handleTextareaKeyDown}
+          style={elementLabelTextareaStyle}
+          rows={1}
+        />
+      )}
+    </div>
   );
 });
 

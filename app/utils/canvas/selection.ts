@@ -195,7 +195,8 @@ export function getTextBoxResizeHandle(
     height = textBox.height * scale.y;
   }
 
-  const handleSize = 8;
+  const handleSize = 8; // Visual size of the handle
+  const clickRadius = 20; // Larger click detection area for easier interaction (covers entire visible circle plus extra margin)
   const corners = [
     { corner: 'nw' as const, x, y },
     { corner: 'ne' as const, x: x + width, y },
@@ -205,7 +206,7 @@ export function getTextBoxResizeHandle(
 
   for (const { corner, x: cx, y: cy } of corners) {
     const distance = Math.sqrt((canvasX - cx) ** 2 + (canvasY - cy) ** 2);
-    if (distance <= handleSize) return corner;
+    if (distance <= clickRadius) return corner;
   }
   return null;
 }

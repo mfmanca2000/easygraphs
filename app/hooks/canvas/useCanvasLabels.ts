@@ -13,8 +13,16 @@ export interface UseCanvasLabelsReturn {
   setResizingTextBox: React.Dispatch<React.SetStateAction<{ id: string; corner: 'ne' | 'se' | 'sw' | 'nw' } | null>>;
   textBoxDragOffset: Point;
   setTextBoxDragOffset: React.Dispatch<React.SetStateAction<Point>>;
+  editingTextBoxId: string | null;
+  setEditingTextBoxId: React.Dispatch<React.SetStateAction<string | null>>;
   selectedElementLabelIndex: number | null;
   setSelectedElementLabelIndex: React.Dispatch<React.SetStateAction<number | null>>;
+  editingElementLabelIndex: number | null;
+  setEditingElementLabelIndex: React.Dispatch<React.SetStateAction<number | null>>;
+  resizingElementLabelIndex: number | null;
+  setResizingElementLabelIndex: React.Dispatch<React.SetStateAction<number | null>>;
+  elementLabelResizeStart: { canvasY: number; initialFontSize: number } | null;
+  setElementLabelResizeStart: React.Dispatch<React.SetStateAction<{ canvasY: number; initialFontSize: number } | null>>;
   draggingElementLabel: number | null;
   setDraggingElementLabel: React.Dispatch<React.SetStateAction<number | null>>;
   selectedIntersectionLabelIndex: number | null;
@@ -32,7 +40,11 @@ export function useCanvasLabels(): UseCanvasLabelsReturn {
     corner: 'ne' | 'se' | 'sw' | 'nw';
   } | null>(null);
   const [textBoxDragOffset, setTextBoxDragOffset] = useState<Point>({ x: 0, y: 0 });
+  const [editingTextBoxId, setEditingTextBoxId] = useState<string | null>(null);
   const [selectedElementLabelIndex, setSelectedElementLabelIndex] = useState<number | null>(null);
+  const [editingElementLabelIndex, setEditingElementLabelIndex] = useState<number | null>(null);
+  const [resizingElementLabelIndex, setResizingElementLabelIndex] = useState<number | null>(null);
+  const [elementLabelResizeStart, setElementLabelResizeStart] = useState<{ canvasY: number; initialFontSize: number } | null>(null);
   const [draggingElementLabel, setDraggingElementLabel] = useState<number | null>(null);
   const [selectedIntersectionLabelIndex, setSelectedIntersectionLabelIndex] = useState<number | null>(null);
   const [draggingIntersectionLabel, setDraggingIntersectionLabel] = useState<number | null>(null);
@@ -47,8 +59,16 @@ export function useCanvasLabels(): UseCanvasLabelsReturn {
     setResizingTextBox,
     textBoxDragOffset,
     setTextBoxDragOffset,
+    editingTextBoxId,
+    setEditingTextBoxId,
     selectedElementLabelIndex,
     setSelectedElementLabelIndex,
+    editingElementLabelIndex,
+    setEditingElementLabelIndex,
+    resizingElementLabelIndex,
+    setResizingElementLabelIndex,
+    elementLabelResizeStart,
+    setElementLabelResizeStart,
     draggingElementLabel,
     setDraggingElementLabel,
     selectedIntersectionLabelIndex,
