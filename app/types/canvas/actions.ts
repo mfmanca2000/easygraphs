@@ -10,6 +10,6 @@ export type Action =
   | { type: 'modify'; elementId: number; previousState: GraphElement }
   | { type: 'label'; previousState: GraphLabels }
   | { type: 'paste'; previousElements: GraphElement[]; previousLabels: GraphLabels }
-  | { type: 'delete'; deletedElements: {id: number, element: GraphElement}[]; deletedTextBoxes: TextBox[]; previousElementsLength: number }
+  | { type: 'delete'; deletedElements: {id: number, element: GraphElement}[]; deletedTextBoxes: TextBox[]; previousLabels: GraphLabels; previousElementsLength: number }
   | { type: 'group'; previousGroups: Group[] }
   | { type: 'ungroup'; previousGroups: Group[] };

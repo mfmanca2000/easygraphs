@@ -4791,13 +4791,17 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
   // Handle exiting edit mode
   const exitEditMode = () => {
     if (editingTextBoxId) {
-      // Add to history when done editing
-      onLabelsChange?.(labels, true);
+      // Notify parent component of label changes
+      if (onLabelsChange) {
+        onLabelsChange(labels);
+      }
       setEditingTextBoxId(null);
     }
     if (editingElementLabelIndex !== null) {
-      // Add to history when done editing
-      onLabelsChange?.(labels, true);
+      // Notify parent component of label changes
+      if (onLabelsChange) {
+        onLabelsChange(labels);
+      }
       setEditingElementLabelIndex(null);
     }
   };
