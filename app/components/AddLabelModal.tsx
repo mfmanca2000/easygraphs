@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { X } from 'lucide-react';
 
 interface AddLabelModalProps {
   isOpen: boolean;
@@ -12,6 +13,13 @@ interface AddLabelModalProps {
 
 export default function AddLabelModal({ isOpen, onClose, onAddLabel, elementId, intersectionIndex }: AddLabelModalProps) {
   const [labelText, setLabelText] = useState('');
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -42,71 +50,41 @@ export default function AddLabelModal({ isOpen, onClose, onAddLabel, elementId, 
   };
 
   return (
-    <div
-      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
-      onClick={handleBackdropClick}
-    >
-      <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: 'var(--canvas-border)' }}>
-          <h2 className="text-xl font-semibold" style={{ color: 'var(--architect-blue)' }}>
-            {modalTitle}
-          </h2>
-          <button
-            onClick={onClose}
-            className="text-gray-500 hover:text-gray-700 text-2xl leading-none"
-          >
-            ×
+    <div className="modal-backdrop" onClick={handleBackdropClick}>
+      <div
+        className="modal max-w-md"
+        role="dialog"
+        aria-modal="true"
+        aria-label={modalTitle}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="modal-header">
+          <h2 style={{ fontSize: 15, fontWeight: 600 }}>{modalTitle}</h2>
+          <button onClick={onClose} className="btn btn-ghost btn-icon" aria-label="Close">
+            <X size={18} />
           </button>
         </div>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6">
-          <div className="mb-4">
-            <label
-              htmlFor="labelText"
-              className="block text-sm font-medium mb-2"
-              style={{ color: 'var(--architect-blue)' }}
-            >
-              Label Text
-            </label>
+        <form onSubmit={handleSubmit}>
+          <div className="modal-body">
+            <label htmlFor="labelText" className="field-label">Label text</label>
             <input
               type="text"
               id="labelText"
               value={labelText}
               onChange={(e) => setLabelText(e.target.value)}
-              className="w-full px-3 py-2 rounded border focus:outline-none focus:ring-2"
-              style={{
-                borderColor: 'var(--canvas-border)',
-                color: 'var(--architect-blue)'
-              }}
+              className="input"
               placeholder="Enter label text..."
               autoFocus
             />
           </div>
 
-          {/* Action Buttons */}
-          <div className="flex justify-end gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 rounded border transition-colors"
-              style={{
-                borderColor: 'var(--canvas-border)',
-                color: 'var(--architect-blue)'
-              }}
-            >
+          <div className="modal-footer">
+            <button type="button" onClick={onClose} className="btn">
               Cancel
             </button>
-            <button
-              type="submit"
-              className="px-4 py-2 rounded transition-colors text-white"
-              style={{
-                background: '#E74C3C'
-              }}
-              disabled={!labelText.trim()}
-            >
-              Add Label
+            <button type="submit" className="btn btn-primary" disabled={!labelText.trim()}>
+              Add label
             </button>
           </div>
         </form>

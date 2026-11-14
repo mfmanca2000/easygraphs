@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { Plus } from 'lucide-react';
 import type { Point, GraphElement, DrawMode } from '@/app/types/canvas';
 
 export interface CoordinateInputProps {
@@ -15,6 +16,103 @@ export interface CoordinateInputProps {
   onToggleIntersections?: () => void;
   drawMode?: DrawMode;
   elementCount?: number;
+}
+
+function CoordRow({ label, point, color }: { label: string; point: Point; color?: string }) {
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{label}</span>
+      <span className="coord" style={color ? { color } : undefined}>
+        ({point.x.toFixed(2)}, {point.y.toFixed(2)})
+      </span>
+    </div>
+  );
+}
+
+function ElementDetails({ id, element, onTogglePointProjection }: {
+  id: number;
+  element: GraphElement;
+  onTogglePointProjection?: (id: number) => void;
+}) {
+  const title = element.type.charAt(0).toUpperCase() + element.type.slice(1);
+  return (
+    <div className="card space-y-2">
+      <div style={{ fontSize: 13, fontWeight: 500 }}>
+        {title} #{id}
+      </div>
+      {element.type === 'line' && (
+        <>
+          <CoordRow label="Start" point={element.points[0]} />
+          <CoordRow label="End" point={element.points[1]} />
+        </>
+      )}
+      {element.type === 'bezier' && (
+        <>
+          <CoordRow label="Start" point={element.points[0]} />
+          <CoordRow label="End" point={element.points[1]} />
+          {element.controlPoint && (
+            <CoordRow label="Control" point={element.controlPoint} color="var(--intersect)" />
+          )}
+        </>
+      )}
+      {element.type === 'point' && (
+        <>
+          <CoordRow label="Location" point={element.points[0]} />
+          {onTogglePointProjection && (
+            <button
+              onClick={() => onTogglePointProjection(id)}
+              className="btn btn-sm btn-block"
+              aria-pressed={!!element.showProjection}
+            >
+              {element.showProjection ? 'Hide projection' : 'Show projection'}
+            </button>
+          )}
+        </>
+      )}
+      {element.type === 'freehand' && (
+        <>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{element.points.length} points</div>
+          {element.points.slice(0, 3).map((point, idx) => (
+            <CoordRow key={idx} label={`P${idx}`} point={point} />
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
+
+function PointFields({ label, x, y, onX, onY }: {
+  label: string;
+  x: string;
+  y: string;
+  onX: (v: string) => void;
+  onY: (v: string) => void;
+}) {
+  return (
+    <div>
+      <div className="field-label">{label}</div>
+      <div className="grid grid-cols-2 gap-2">
+        <input
+          type="number"
+          step="0.1"
+          value={x}
+          onChange={(e) => onX(e.target.value)}
+          placeholder="x"
+          aria-label={`${label} x`}
+          className="input input-mono"
+        />
+        <input
+          type="number"
+          step="0.1"
+          value={y}
+          onChange={(e) => onY(e.target.value)}
+          placeholder="y"
+          aria-label={`${label} y`}
+          className="input input-mono"
+        />
+      </div>
+    </div>
+  );
 }
 
 export default function CoordinateInput({ onAddLine, onAddPoint, currentPoint, selectedElement, selectedElementId, selectedElements, onTogglePointProjection, showIntersections, onToggleIntersections, drawMode = 'line', elementCount = 0 }: CoordinateInputProps) {
@@ -62,92 +160,21 @@ export default function CoordinateInput({ onAddLine, onAddPoint, currentPoint, s
     }
   };
 
+  const hasMultiSelection = !!selectedElements && selectedElements.length > 0;
+  const hasSingleSelection = !hasMultiSelection && !!selectedElement && selectedElementId !== null && selectedElementId !== undefined;
+  const hasForm = drawMode === 'line' || drawMode === 'point';
+  const showToggle = !!onToggleIntersections && elementCount > 1;
+
   return (
-    <div>
+    <div className="space-y-4">
       {/* Line Tool Form */}
       {drawMode === 'line' && (
         <form onSubmit={handleLineSubmit} className="space-y-4">
-          {/* Start Point */}
-          <div>
-            <label className="text-sm font-medium block mb-2" style={{ color: 'var(--pencil-lead)' }}>
-              Start Point
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              <input
-                type="number"
-                step="0.1"
-                value={startX}
-                onChange={(e) => setStartX(e.target.value)}
-                placeholder="X"
-                className="w-full px-3 py-2 text-sm rounded-md"
-                style={{
-                  border: '1.5px solid var(--canvas-border)',
-                  fontFamily: 'JetBrains Mono, monospace',
-                  color: 'var(--pencil-lead)'
-                }}
-              />
-              <input
-                type="number"
-                step="0.1"
-                value={startY}
-                onChange={(e) => setStartY(e.target.value)}
-                placeholder="Y"
-                className="w-full px-3 py-2 text-sm rounded-md"
-                style={{
-                  border: '1.5px solid var(--canvas-border)',
-                  fontFamily: 'JetBrains Mono, monospace',
-                  color: 'var(--pencil-lead)'
-                }}
-              />
-            </div>
-          </div>
-
-          {/* End Point */}
-          <div>
-            <label className="text-sm font-medium block mb-2" style={{ color: 'var(--pencil-lead)' }}>
-              End Point
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              <input
-                type="number"
-                step="0.1"
-                value={endX}
-                onChange={(e) => setEndX(e.target.value)}
-                placeholder="X"
-                className="w-full px-3 py-2 text-sm rounded-md"
-                style={{
-                  border: '1.5px solid var(--canvas-border)',
-                  fontFamily: 'JetBrains Mono, monospace',
-                  color: 'var(--pencil-lead)'
-                }}
-              />
-              <input
-                type="number"
-                step="0.1"
-                value={endY}
-                onChange={(e) => setEndY(e.target.value)}
-                placeholder="Y"
-                className="w-full px-3 py-2 text-sm rounded-md"
-                style={{
-                  border: '1.5px solid var(--canvas-border)',
-                  fontFamily: 'JetBrains Mono, monospace',
-                  color: 'var(--pencil-lead)'
-                }}
-              />
-            </div>
-          </div>
-
-          {/* Submit Button */}
-          <button
-            type="submit"
-            className="w-full px-4 py-2.5 rounded-md text-sm font-medium transition-all"
-            style={{
-              background: 'var(--architect-blue)',
-              color: 'white',
-              border: 'none'
-            }}
-          >
-            + Add Line
+          <PointFields label="Start" x={startX} y={startY} onX={setStartX} onY={setStartY} />
+          <PointFields label="End" x={endX} y={endY} onX={setEndX} onY={setEndY} />
+          <button type="submit" className="btn btn-primary btn-block">
+            <Plus size={16} />
+            Add line
           </button>
         </form>
       )}
@@ -155,391 +182,56 @@ export default function CoordinateInput({ onAddLine, onAddPoint, currentPoint, s
       {/* Point Tool Form */}
       {drawMode === 'point' && (
         <form onSubmit={handlePointSubmit} className="space-y-4">
-          {/* Point */}
-          <div>
-            <label className="text-sm font-medium block mb-2" style={{ color: 'var(--pencil-lead)' }}>
-              Point
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              <input
-                type="number"
-                step="0.1"
-                value={pointX}
-                onChange={(e) => setPointX(e.target.value)}
-                placeholder="X"
-                className="w-full px-3 py-2 text-sm rounded-md"
-                style={{
-                  border: '1.5px solid var(--canvas-border)',
-                  fontFamily: 'JetBrains Mono, monospace',
-                  color: 'var(--pencil-lead)'
-                }}
-              />
-              <input
-                type="number"
-                step="0.1"
-                value={pointY}
-                onChange={(e) => setPointY(e.target.value)}
-                placeholder="Y"
-                className="w-full px-3 py-2 text-sm rounded-md"
-                style={{
-                  border: '1.5px solid var(--canvas-border)',
-                  fontFamily: 'JetBrains Mono, monospace',
-                  color: 'var(--pencil-lead)'
-                }}
-              />
-            </div>
-          </div>
-
-          {/* Submit Button */}
-          <button
-            type="submit"
-            className="w-full px-4 py-2.5 rounded-md text-sm font-medium transition-all"
-            style={{
-              background: 'var(--architect-blue)',
-              color: 'white',
-              border: 'none'
-            }}
-          >
-            + Add Point
+          <PointFields label="Point" x={pointX} y={pointY} onX={setPointX} onY={setPointY} />
+          <button type="submit" className="btn btn-primary btn-block">
+            <Plus size={16} />
+            Add point
           </button>
         </form>
       )}
 
       {/* Intersection toggle button - only show when more than 1 element */}
-      {onToggleIntersections && elementCount > 1 && (
-        <div className="mt-4 pt-4 border-t" style={{ borderColor: 'var(--graph-lines)' }}>
-          <button
-            onClick={onToggleIntersections}
-            className="w-full px-4 py-2.5 rounded-md text-sm font-medium transition-all"
-            style={{
-              background: showIntersections ? '#9B59B6' : 'transparent',
-              color: showIntersections ? 'white' : '#9B59B6',
-              border: '1.5px solid #9B59B6'
-            }}
-          >
-            {showIntersections ? '✓ Hide' : '+ Show'} Intersections
-          </button>
-        </div>
+      {showToggle && (
+        <button
+          onClick={onToggleIntersections}
+          className="btn btn-block"
+          aria-pressed={!!showIntersections}
+          style={showIntersections ? {
+            background: 'var(--intersect-soft)',
+            borderColor: 'var(--intersect)',
+            color: 'var(--intersect)',
+          } : undefined}
+        >
+          {showIntersections ? 'Hide intersections' : 'Show intersections'}
+        </button>
       )}
 
       {/* Selected Elements Display */}
-      {selectedElements && selectedElements.length > 0 ? (
-        <div className="mt-4 pt-4 border-t" style={{ borderColor: 'var(--graph-lines)' }}>
-          <p className="text-xs font-medium mb-3" style={{
-            color: 'var(--pencil-lead)',
-            opacity: 0.7,
-            textTransform: 'uppercase',
-            letterSpacing: '0.05em'
-          }}>
-            Selected Elements ({selectedElements.length})
-          </p>
-          <div className="max-h-96 overflow-y-auto space-y-3">
-            {selectedElements.map(({ id, element }) => (
-              <div key={id} className="p-3 rounded-md" style={{
-                background: 'rgba(43, 95, 130, 0.05)',
-                border: '1px solid var(--graph-lines)'
-              }}>
-                <p className="text-xs font-semibold mb-2" style={{
-                  color: 'var(--architect-blue)',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em'
-                }}>
-                  Element #{id} ({element.type})
-                </p>
-                <div className="space-y-2">
-                  {element.type === 'line' && (
-                    <>
-                      <div>
-                        <p className="text-xs mb-1" style={{ color: 'var(--pencil-lead)', opacity: 0.6 }}>Start</p>
-                        <div className="px-2 py-1 rounded text-xs" style={{
-                          background: 'rgba(230, 126, 34, 0.1)',
-                          border: '1px solid var(--architect-orange)',
-                          fontFamily: 'JetBrains Mono, monospace',
-                          color: 'var(--architect-orange)',
-                          fontWeight: 600
-                        }}>
-                          ({element.points[0].x.toFixed(2)}, {element.points[0].y.toFixed(2)})
-                        </div>
-                      </div>
-                      <div>
-                        <p className="text-xs mb-1" style={{ color: 'var(--pencil-lead)', opacity: 0.6 }}>End</p>
-                        <div className="px-2 py-1 rounded text-xs" style={{
-                          background: 'rgba(230, 126, 34, 0.1)',
-                          border: '1px solid var(--architect-orange)',
-                          fontFamily: 'JetBrains Mono, monospace',
-                          color: 'var(--architect-orange)',
-                          fontWeight: 600
-                        }}>
-                          ({element.points[1].x.toFixed(2)}, {element.points[1].y.toFixed(2)})
-                        </div>
-                      </div>
-                    </>
-                  )}
-                  {element.type === 'bezier' && (
-                    <>
-                      <div>
-                        <p className="text-xs mb-1" style={{ color: 'var(--pencil-lead)', opacity: 0.6 }}>Start</p>
-                        <div className="px-2 py-1 rounded text-xs" style={{
-                          background: 'rgba(230, 126, 34, 0.1)',
-                          border: '1px solid var(--architect-orange)',
-                          fontFamily: 'JetBrains Mono, monospace',
-                          color: 'var(--architect-orange)',
-                          fontWeight: 600
-                        }}>
-                          ({element.points[0].x.toFixed(2)}, {element.points[0].y.toFixed(2)})
-                        </div>
-                      </div>
-                      <div>
-                        <p className="text-xs mb-1" style={{ color: 'var(--pencil-lead)', opacity: 0.6 }}>End</p>
-                        <div className="px-2 py-1 rounded text-xs" style={{
-                          background: 'rgba(230, 126, 34, 0.1)',
-                          border: '1px solid var(--architect-orange)',
-                          fontFamily: 'JetBrains Mono, monospace',
-                          color: 'var(--architect-orange)',
-                          fontWeight: 600
-                        }}>
-                          ({element.points[1].x.toFixed(2)}, {element.points[1].y.toFixed(2)})
-                        </div>
-                      </div>
-                      {element.controlPoint && (
-                        <div>
-                          <p className="text-xs mb-1" style={{ color: 'var(--pencil-lead)', opacity: 0.6 }}>Control</p>
-                          <div className="px-2 py-1 rounded text-xs" style={{
-                            background: 'rgba(155, 89, 182, 0.1)',
-                            border: '1px solid #9B59B6',
-                            fontFamily: 'JetBrains Mono, monospace',
-                            color: '#9B59B6',
-                            fontWeight: 600
-                          }}>
-                            ({element.controlPoint.x.toFixed(2)}, {element.controlPoint.y.toFixed(2)})
-                          </div>
-                        </div>
-                      )}
-                    </>
-                  )}
-                  {element.type === 'point' && (
-                    <>
-                      <div>
-                        <p className="text-xs mb-1" style={{ color: 'var(--pencil-lead)', opacity: 0.6 }}>Location</p>
-                        <div className="px-2 py-1 rounded text-xs" style={{
-                          background: 'rgba(230, 126, 34, 0.1)',
-                          border: '1px solid var(--architect-orange)',
-                          fontFamily: 'JetBrains Mono, monospace',
-                          color: 'var(--architect-orange)',
-                          fontWeight: 600
-                        }}>
-                          ({element.points[0].x.toFixed(2)}, {element.points[0].y.toFixed(2)})
-                        </div>
-                      </div>
-                      {onTogglePointProjection && (
-                        <button
-                          onClick={() => onTogglePointProjection(id)}
-                          className="w-full mt-2 px-3 py-1.5 rounded text-xs font-medium transition-all"
-                          style={{
-                            background: element.showProjection ? 'var(--architect-orange)' : 'transparent',
-                            color: element.showProjection ? 'white' : 'var(--architect-orange)',
-                            border: `1px solid var(--architect-orange)`
-                          }}
-                        >
-                          {element.showProjection ? '✓ Hide' : '+ Show'} Projection
-                        </button>
-                      )}
-                    </>
-                  )}
-                  {element.type === 'freehand' && (
-                    <div>
-                      <p className="text-xs mb-1" style={{ color: 'var(--pencil-lead)', opacity: 0.6 }}>
-                        Path ({element.points.length} points)
-                      </p>
-                      <div className="text-xs px-2 py-1 rounded" style={{
-                        background: 'rgba(230, 126, 34, 0.05)',
-                        border: '1px solid var(--graph-lines)',
-                        fontFamily: 'JetBrains Mono, monospace',
-                        color: 'var(--architect-orange)'
-                      }}>
-                        Showing first 3 points
-                      </div>
-                      {element.points.slice(0, 3).map((point, idx) => (
-                        <div key={idx} className="px-2 py-1 rounded text-xs mt-1" style={{
-                          background: 'rgba(230, 126, 34, 0.05)',
-                          border: '1px solid var(--graph-lines)',
-                          fontFamily: 'JetBrains Mono, monospace',
-                          color: 'var(--architect-orange)',
-                          fontWeight: 600
-                        }}>
-                          P{idx}: ({point.x.toFixed(2)}, {point.y.toFixed(2)})
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
+      {hasMultiSelection && (
+        <div className="space-y-2">
+          <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-muted)' }}>
+            Selected ({selectedElements!.length})
           </div>
-        </div>
-      ) : selectedElement && selectedElementId !== null && (
-        <div className="mt-4 pt-4 border-t" style={{ borderColor: 'var(--graph-lines)' }}>
-          <p className="text-xs font-medium mb-2" style={{
-            color: 'var(--pencil-lead)',
-            opacity: 0.7,
-            textTransform: 'uppercase',
-            letterSpacing: '0.05em'
-          }}>
-            Selected Element #{selectedElementId}
-          </p>
-          <div className="space-y-2">
-            {selectedElement.type === 'line' && (
-              <>
-                <div>
-                  <p className="text-xs mb-1" style={{ color: 'var(--pencil-lead)', opacity: 0.6 }}>Start Point</p>
-                  <div className="px-3 py-2 rounded-md" style={{
-                    background: 'rgba(230, 126, 34, 0.1)',
-                    border: '1px solid var(--architect-orange)',
-                    fontFamily: 'JetBrains Mono, monospace',
-                    fontSize: '0.875rem',
-                    color: 'var(--architect-orange)',
-                    fontWeight: 600
-                  }}>
-                    ({selectedElement.points[0].x.toFixed(2)}, {selectedElement.points[0].y.toFixed(2)})
-                  </div>
-                </div>
-                <div>
-                  <p className="text-xs mb-1" style={{ color: 'var(--pencil-lead)', opacity: 0.6 }}>End Point</p>
-                  <div className="px-3 py-2 rounded-md" style={{
-                    background: 'rgba(230, 126, 34, 0.1)',
-                    border: '1px solid var(--architect-orange)',
-                    fontFamily: 'JetBrains Mono, monospace',
-                    fontSize: '0.875rem',
-                    color: 'var(--architect-orange)',
-                    fontWeight: 600
-                  }}>
-                    ({selectedElement.points[1].x.toFixed(2)}, {selectedElement.points[1].y.toFixed(2)})
-                  </div>
-                </div>
-              </>
-            )}
-            {selectedElement.type === 'bezier' && (
-              <>
-                <div>
-                  <p className="text-xs mb-1" style={{ color: 'var(--pencil-lead)', opacity: 0.6 }}>Start Point</p>
-                  <div className="px-3 py-2 rounded-md" style={{
-                    background: 'rgba(230, 126, 34, 0.1)',
-                    border: '1px solid var(--architect-orange)',
-                    fontFamily: 'JetBrains Mono, monospace',
-                    fontSize: '0.875rem',
-                    color: 'var(--architect-orange)',
-                    fontWeight: 600
-                  }}>
-                    ({selectedElement.points[0].x.toFixed(2)}, {selectedElement.points[0].y.toFixed(2)})
-                  </div>
-                </div>
-                <div>
-                  <p className="text-xs mb-1" style={{ color: 'var(--pencil-lead)', opacity: 0.6 }}>End Point</p>
-                  <div className="px-3 py-2 rounded-md" style={{
-                    background: 'rgba(230, 126, 34, 0.1)',
-                    border: '1px solid var(--architect-orange)',
-                    fontFamily: 'JetBrains Mono, monospace',
-                    fontSize: '0.875rem',
-                    color: 'var(--architect-orange)',
-                    fontWeight: 600
-                  }}>
-                    ({selectedElement.points[1].x.toFixed(2)}, {selectedElement.points[1].y.toFixed(2)})
-                  </div>
-                </div>
-                {selectedElement.controlPoint && (
-                  <div>
-                    <p className="text-xs mb-1" style={{ color: 'var(--pencil-lead)', opacity: 0.6 }}>Control Point</p>
-                    <div className="px-3 py-2 rounded-md" style={{
-                      background: 'rgba(155, 89, 182, 0.1)',
-                      border: '1px solid #9B59B6',
-                      fontFamily: 'JetBrains Mono, monospace',
-                      fontSize: '0.875rem',
-                      color: '#9B59B6',
-                      fontWeight: 600
-                    }}>
-                      ({selectedElement.controlPoint.x.toFixed(2)}, {selectedElement.controlPoint.y.toFixed(2)})
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
-            {selectedElement.type === 'freehand' && (
-              <div>
-                <p className="text-xs mb-1" style={{ color: 'var(--pencil-lead)', opacity: 0.6 }}>
-                  Freehand Path ({selectedElement.points.length} points)
-                </p>
-                <div className="max-h-32 overflow-y-auto space-y-1">
-                  {selectedElement.points.slice(0, 5).map((point, idx) => (
-                    <div key={idx} className="px-2 py-1 rounded-md text-xs" style={{
-                      background: 'rgba(230, 126, 34, 0.05)',
-                      border: '1px solid var(--graph-lines)',
-                      fontFamily: 'JetBrains Mono, monospace',
-                      color: 'var(--architect-orange)',
-                      fontWeight: 600
-                    }}>
-                      P{idx}: ({point.x.toFixed(2)}, {point.y.toFixed(2)})
-                    </div>
-                  ))}
-                  {selectedElement.points.length > 5 && (
-                    <p className="text-xs text-center" style={{ color: 'var(--pencil-lead)', opacity: 0.5, fontStyle: 'italic' }}>
-                      +{selectedElement.points.length - 5} more points
-                    </p>
-                  )}
-                </div>
-              </div>
-            )}
-            {selectedElement.type === 'point' && (
-              <div>
-                <div>
-                  <p className="text-xs mb-1" style={{ color: 'var(--pencil-lead)', opacity: 0.6 }}>Point Location</p>
-                  <div className="px-3 py-2 rounded-md" style={{
-                    background: 'rgba(230, 126, 34, 0.1)',
-                    border: '1px solid var(--architect-orange)',
-                    fontFamily: 'JetBrains Mono, monospace',
-                    fontSize: '0.875rem',
-                    color: 'var(--architect-orange)',
-                    fontWeight: 600
-                  }}>
-                    ({selectedElement.points[0].x.toFixed(2)}, {selectedElement.points[0].y.toFixed(2)})
-                  </div>
-                </div>
-                {onTogglePointProjection && selectedElementId !== null && (
-                  <button
-                    onClick={() => onTogglePointProjection(selectedElementId!)}
-                    className="w-full mt-3 px-4 py-2.5 rounded-md text-sm font-medium transition-all"
-                    style={{
-                      background: selectedElement.showProjection ? 'var(--architect-orange)' : 'transparent',
-                      color: selectedElement.showProjection ? 'white' : 'var(--architect-orange)',
-                      border: `1.5px solid var(--architect-orange)`
-                    }}
-                  >
-                    {selectedElement.showProjection ? '✓ Hide' : '+ Show'} Projection
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
+          {selectedElements!.map(({ id, element }) => (
+            <ElementDetails key={id} id={id} element={element} onTogglePointProjection={onTogglePointProjection} />
+          ))}
         </div>
       )}
 
-      {/* Current Point Display */}
-      {/* {!selectedElement && currentPoint && (
-        <div className="mt-4 pt-4 border-t" style={{ borderColor: 'var(--graph-lines)' }}>
-          <p className="text-xs font-medium mb-2" style={{ color: 'var(--pencil-lead)', opacity: 0.7 }}>
-            Last Clicked:
-          </p>
-          <div className="px-3 py-2 rounded-md" style={{
-            background: 'rgba(43, 95, 130, 0.05)',
-            border: '1px solid var(--graph-lines)',
-            fontFamily: 'JetBrains Mono, monospace',
-            fontSize: '0.875rem',
-            color: 'var(--architect-blue)',
-            fontWeight: 600
-          }}>
-            ({currentPoint.x.toFixed(2)}, {currentPoint.y.toFixed(2)})
-          </div>
+      {hasSingleSelection && (
+        <div className="space-y-2">
+          <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-muted)' }}>Selected (1)</div>
+          <ElementDetails
+            id={selectedElementId!}
+            element={selectedElement!}
+            onTogglePointProjection={onTogglePointProjection}
+          />
         </div>
-      )} */}
+      )}
+
+      {!hasForm && !hasMultiSelection && !hasSingleSelection && !showToggle && (
+        <div className="empty">Select an element to see its coordinates.</div>
+      )}
     </div>
   );
 }

@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { Check, X } from 'lucide-react';
 
 interface CharacterPaletteProps {
   isOpen: boolean;
@@ -60,6 +61,13 @@ export default function CharacterPalette({ isOpen, onClose, onCharacterSelect }:
   const [activeCategory, setActiveCategory] = useState<Category>('greek');
   const [copiedChar, setCopiedChar] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const handleCharacterClick = async (char: string) => {
@@ -83,56 +91,52 @@ export default function CharacterPalette({ isOpen, onClose, onCharacterSelect }:
   };
 
   return (
-    <div
-      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
-      onClick={handleBackdropClick}
-    >
-      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4" onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-gray-200">
-          <h2 className="text-xl font-semibold text-gray-800">Character Palette</h2>
-          <button
-            onClick={onClose}
-            className="text-gray-500 hover:text-gray-700 text-2xl leading-none"
-          >
-            ×
+    <div className="modal-backdrop" onClick={handleBackdropClick}>
+      <div
+        className="modal max-w-2xl"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Character Palette"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="modal-header">
+          <h2 style={{ fontSize: 15, fontWeight: 600 }}>Character Palette</h2>
+          <button onClick={onClose} className="btn btn-ghost btn-icon" aria-label="Close">
+            <X size={18} />
           </button>
         </div>
 
-        {/* Tabs */}
-        <div className="flex border-b border-gray-200 overflow-x-auto">
-          {(Object.keys(CHARACTER_CATEGORIES) as Category[]).map((category) => (
-            <button
-              key={category}
-              onClick={() => setActiveCategory(category)}
-              className={`px-4 py-3 font-medium text-sm whitespace-nowrap transition-colors ${
-                activeCategory === category
-                  ? 'text-blue-600 border-b-2 border-blue-600'
-                  : 'text-gray-600 hover:text-gray-800'
-              }`}
-            >
-              {CHARACTER_CATEGORIES[category].name}
-            </button>
-          ))}
-        </div>
+        <div className="modal-body space-y-4">
+          <div className="seg" style={{ display: 'flex', flexWrap: 'wrap' }}>
+            {(Object.keys(CHARACTER_CATEGORIES) as Category[]).map((category) => (
+              <button
+                key={category}
+                onClick={() => setActiveCategory(category)}
+                className="seg-item"
+                style={{ flex: '1 1 auto' }}
+                aria-pressed={activeCategory === category}
+              >
+                {CHARACTER_CATEGORIES[category].name}
+              </button>
+            ))}
+          </div>
 
-        {/* Character Grid */}
-        <div className="p-6 max-h-96 overflow-y-auto">
           <div className="grid grid-cols-8 sm:grid-cols-10 md:grid-cols-12 gap-2">
             {CHARACTER_CATEGORIES[activeCategory].characters.map((char, index) => (
               <button
                 key={index}
                 onClick={() => handleCharacterClick(char)}
-                className={`
-                  aspect-square flex items-center justify-center
-                  text-xl font-medium rounded border
-                  transition-all duration-150
-                  ${
-                    copiedChar === char
-                      ? 'bg-green-100 border-green-500 text-green-700'
-                      : 'bg-white border-gray-300 hover:bg-blue-50 hover:border-blue-400 text-gray-800'
-                  }
-                `}
+                className="flex items-center justify-center hover:bg-[var(--bg)]"
+                style={{
+                  width: 36,
+                  height: 36,
+                  fontSize: 18,
+                  borderRadius: 6,
+                  border: '1px solid var(--border)',
+                  ...(copiedChar === char
+                    ? { background: 'var(--accent-soft)', borderColor: 'var(--accent)' }
+                    : {}),
+                }}
                 title={`Copy "${char}"`}
               >
                 {char}
@@ -141,16 +145,14 @@ export default function CharacterPalette({ isOpen, onClose, onCharacterSelect }:
           </div>
         </div>
 
-        {/* Footer */}
-        <div className="p-4 bg-gray-50 border-t border-gray-200 rounded-b-lg">
-          <p className="text-sm text-gray-600 text-center">
-            Click any character to copy to clipboard
-            {copiedChar && (
-              <span className="ml-2 text-green-600 font-medium">
-                ✓ Copied "{copiedChar}"
-              </span>
-            )}
-          </p>
+        <div className="modal-footer" style={{ justifyContent: 'center', fontSize: 13, color: 'var(--text-muted)' }}>
+          <span>Click any character to copy it to the clipboard</span>
+          {copiedChar && (
+            <span className="inline-flex items-center gap-1" style={{ color: 'var(--success)', fontWeight: 500 }}>
+              <Check size={14} />
+              Copied &ldquo;{copiedChar}&rdquo;
+            </span>
+          )}
         </div>
       </div>
     </div>
