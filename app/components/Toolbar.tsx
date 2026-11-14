@@ -1,5 +1,7 @@
 'use client';
 
+import type { LucideIcon } from 'lucide-react';
+import { MousePointer2, Dot, Slash, Spline, Pencil, SquareFunction, PaintBucket, Type } from 'lucide-react';
 import type { DrawMode } from '@/app/types/canvas';
 import { Slider } from './ui/slider';
 
@@ -34,6 +36,43 @@ const PRESET_COLORS = [
   '#34495E', '#16A085', '#95A5A6', '#E91E63'
 ];
 
+const TOOLS: { mode: DrawMode; icon: LucideIcon; label: string; title: string }[] = [
+  { mode: 'select', icon: MousePointer2, label: 'Select', title: 'Select' },
+  { mode: 'point', icon: Dot, label: 'Point', title: 'Point' },
+  { mode: 'line', icon: Slash, label: 'Line', title: 'Line' },
+  { mode: 'bezier', icon: Spline, label: 'Curve', title: 'Curve' },
+  { mode: 'freehand', icon: Pencil, label: 'Freehand', title: 'Freehand' },
+  { mode: 'function', icon: SquareFunction, label: 'Function', title: 'Function' },
+  { mode: 'fill', icon: PaintBucket, label: 'Fill', title: 'Fill' },
+  { mode: 'textbox', icon: Type, label: 'Text', title: 'Text box' },
+];
+
+const DASH: Record<'solid' | 'dashed' | 'dotted', string | undefined> = {
+  solid: undefined,
+  dashed: '4 3',
+  dotted: '1 3',
+};
+
+function Section({ children, first }: { children: React.ReactNode; first?: boolean }) {
+  return (
+    <div
+      className="space-y-4"
+      style={first ? undefined : { borderTop: '1px solid var(--border)', paddingTop: 16, marginTop: 16 }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function Switch({ label, checked, onClick }: { label: string; checked: boolean; onClick: () => void }) {
+  return (
+    <div className="flex items-center justify-between">
+      <span style={{ fontSize: 13 }}>{label}</span>
+      <button role="switch" aria-checked={checked} aria-label={label} className="switch" onClick={onClick} />
+    </div>
+  );
+}
+
 export default function Toolbar({
   showGrid,
   onToggleGrid,
@@ -58,83 +97,58 @@ export default function Toolbar({
   drawMode,
   onDrawModeChange
 }: ToolbarProps) {
-
   return (
-    <div className="space-y-5">        
-
-        {/* Draw Mode */}
-        <div>
-          <label className="text-sm font-medium block mb-3" style={{ color: 'var(--pencil-lead)' }}>
-            Mode
-          </label>
-          <div className="grid grid-cols-2 gap-2">
-            {(['select', 'point', 'line', 'bezier', 'freehand', 'function', 'fill', 'textbox'] as DrawMode[]).map((mode) => (
-              <button
-                key={mode}
-                onClick={() => onDrawModeChange(mode)}
-                className="px-3 py-2.5 rounded-md text-sm font-medium transition-all capitalize"
-                style={{
-                  background: drawMode === mode ? 'var(--architect-blue)' : 'transparent',
-                  color: drawMode === mode ? 'white' : 'var(--pencil-lead)',
-                  border: `1.5px solid ${drawMode === mode ? 'var(--architect-blue)' : 'var(--canvas-border)'}`,
-                }}
-              >
-                {mode === 'select' ? '↖ Select' :
-                 mode === 'point' ? '• Point' :
-                 mode === 'line' ? '─ Line' :
-                 mode === 'bezier' ? '∿ Curve' :
-                 mode === 'freehand' ? '✎ Freehand' :
-                 mode === 'function' ? 'ƒ(x) Function' :
-                 mode === 'fill' ? '■ Fill' :
-                 mode === 'textbox' ? '□ Text Box' :
-                 mode}
-              </button>
-            ))}
-          </div>
+    <div>
+      <Section first>
+        <div className="grid grid-cols-4 gap-1">
+          {TOOLS.map(({ mode, icon: Icon, label, title }) => (
+            <button
+              key={mode}
+              className="tool"
+              aria-pressed={drawMode === mode}
+              title={title}
+              onClick={() => onDrawModeChange(mode)}
+            >
+              <Icon size={18} />
+              {label}
+            </button>
+          ))}
         </div>
+      </Section>
 
-        {/* Color Picker */}
+      <Section>
         <div>
-          <label className="text-sm font-medium block mb-3" style={{ color: 'var(--pencil-lead)' }}>
-            Color
-          </label>
-          <div className="flex items-center gap-3 mb-3">
+          <div className="field-label">Color</div>
+          <div className="flex items-center gap-2 mb-3">
             <input
               type="color"
               value={strokeColor}
               onChange={(e) => onStrokeColorChange(e.target.value)}
-              className="w-12 h-12 rounded-md cursor-pointer"
-              style={{ border: '2px solid var(--canvas-border)' }}
+              className="color-input"
+              aria-label="Stroke color"
             />
-            <span className="text-sm font-mono" style={{ color: 'var(--pencil-lead)' }}>
-              {strokeColor.toUpperCase()}
-            </span>
+            <span className="field-value">{strokeColor.toUpperCase()}</span>
           </div>
           <div className="grid grid-cols-6 gap-2">
             {PRESET_COLORS.map(color => (
               <button
                 key={color}
                 onClick={() => onStrokeColorChange(color)}
-                className="w-full aspect-square rounded-md transition-all hover:scale-110"
-                style={{
-                  backgroundColor: color,
-                  border: `2px solid ${color === strokeColor ? 'var(--architect-orange)' : 'var(--canvas-border)'}`,
-                  boxShadow: color === strokeColor ? '0 2px 8px rgba(230, 126, 34, 0.3)' : 'none'
-                }}
+                className="swatch"
+                style={{ backgroundColor: color }}
+                aria-pressed={color === strokeColor}
                 title={color}
+                aria-label={color}
               />
             ))}
           </div>
         </div>
 
-        {/* Stroke Width */}
         <div>
-          <label className="text-sm font-medium block mb-3" style={{ color: 'var(--pencil-lead)' }}>
-            Stroke Width
-            <span className="ml-2 font-mono" style={{ color: 'var(--architect-orange)' }}>
-              {strokeWidth}px
-            </span>
-          </label>
+          <div className="field-label">
+            <span>Stroke width</span>
+            <span className="field-value">{strokeWidth}px</span>
+          </div>
           <Slider
             min={1}
             max={20}
@@ -143,82 +157,50 @@ export default function Toolbar({
             onValueChange={(value) => onStrokeWidthChange(value[0])}
             className="w-full"
           />
-          <div className="flex justify-between text-xs mt-1" style={{
-            color: 'var(--pencil-lead)',
-            opacity: 0.6,
-            fontFamily: 'JetBrains Mono, monospace'
-          }}>
-            <span>1</span>
-            <span>20</span>
-          </div>
         </div>
 
-        {/* Line Style */}
         <div>
-          <label className="text-sm font-medium block mb-3" style={{ color: 'var(--pencil-lead)' }}>
-            Line Style
-          </label>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="field-label">Line style</div>
+          <div className="seg" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
             {(['solid', 'dashed', 'dotted'] as const).map((style) => (
               <button
                 key={style}
+                className="seg-item"
+                aria-pressed={lineStyle === style}
                 onClick={() => onLineStyleChange(style)}
-                className="px-3 py-2.5 rounded-md text-sm font-medium transition-all capitalize"
-                style={{
-                  background: lineStyle === style ? 'var(--architect-blue)' : 'transparent',
-                  color: lineStyle === style ? 'white' : 'var(--pencil-lead)',
-                  border: `1.5px solid ${lineStyle === style ? 'var(--architect-blue)' : 'var(--canvas-border)'}`,
-                }}
+                title={style}
               >
-                <span className="text-base mr-1">
-                  {style === 'solid' && '━'}
-                  {style === 'dashed' && '┅'}
-                  {style === 'dotted' && '┈'}
-                </span>
-                <span className="text-xs">{style}</span>
+                <svg width="24" height="4" aria-hidden="true">
+                  <line x1="0" y1="2" x2="24" y2="2" stroke="currentColor" strokeWidth="2" strokeDasharray={DASH[style]} />
+                </svg>
+                <span className="capitalize">{style}</span>
               </button>
             ))}
           </div>
         </div>
 
-        {/* Arrow Type */}
         <div>
-          <label className="text-sm font-medium block mb-3" style={{ color: 'var(--pencil-lead)' }}>
-            Arrow Type
-          </label>
-          <div className="grid grid-cols-2 gap-2">
-            {(['none', 'end', 'start', 'both'] as const).map((type) => (
+          <div className="field-label">Arrows</div>
+          <div className="seg" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+            {([['none', 'None'], ['end', 'End'], ['start', 'Start'], ['both', 'Both']] as const).map(([type, label]) => (
               <button
                 key={type}
+                className="seg-item"
+                aria-pressed={arrowType === type}
                 onClick={() => onArrowTypeChange(type)}
-                className="px-3 py-2.5 rounded-md text-sm font-medium transition-all"
-                style={{
-                  background: arrowType === type ? 'var(--architect-blue)' : 'transparent',
-                  color: arrowType === type ? 'white' : 'var(--pencil-lead)',
-                  border: `1.5px solid ${arrowType === type ? 'var(--architect-blue)' : 'var(--canvas-border)'}`,
-                }}
               >
-                <span className="text-base mr-1">
-                  {type === 'none' && '─'}
-                  {type === 'end' && '─→'}
-                  {type === 'start' && '←─'}
-                  {type === 'both' && '←→'}
-                </span>
-                <span className="text-xs capitalize">{type}</span>
+                {label}
               </button>
             ))}
           </div>
         </div>
 
-        {/* Arrow Size - only show when arrows are enabled */}
         {arrowType !== 'none' && (
           <div>
-            <label className="text-sm font-medium block mb-3" style={{ color: 'var(--pencil-lead)' }}>
-              Arrow Size
-              <span className="ml-2 font-mono" style={{ color: 'var(--architect-orange)' }}>
-                {arrowSize}px
-              </span>
-            </label>
+            <div className="field-label">
+              <span>Arrow size</span>
+              <span className="field-value">{arrowSize}px</span>
+            </div>
             <Slider
               min={3}
               max={10}
@@ -227,50 +209,32 @@ export default function Toolbar({
               onValueChange={(value) => onArrowSizeChange(value[0])}
               className="w-full"
             />
-            <div className="flex justify-between text-xs mt-1" style={{
-              color: 'var(--pencil-lead)',
-              opacity: 0.6,
-              fontFamily: 'JetBrains Mono, monospace'
-            }}>
-              <span>3</span>
-              <span>10</span>
-            </div>
           </div>
         )}
 
-        {/* Curve Type - only show when bezier mode is selected */}
         {drawMode === 'bezier' && (
           <div>
-            <label className="text-sm font-medium block mb-3" style={{ color: 'var(--pencil-lead)' }}>
-              Curve Type
-            </label>
-            <div className="grid grid-cols-3 gap-2">
-              {(['quadratic', 'cubic', 's-curve'] as const).map((type) => (
+            <div className="field-label">Curve type</div>
+            <div className="seg" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
+              {([['quadratic', 'Quad'], ['cubic', 'Cubic'], ['s-curve', 'S-Curve']] as const).map(([type, label]) => (
                 <button
                   key={type}
+                  className="seg-item"
+                  aria-pressed={curveType === type}
                   onClick={() => onCurveTypeChange(type)}
-                  className="px-3 py-2.5 rounded-md text-sm font-medium transition-all capitalize"
-                  style={{
-                    background: curveType === type ? 'var(--architect-blue)' : 'transparent',
-                    color: curveType === type ? 'white' : 'var(--pencil-lead)',
-                    border: `1.5px solid ${curveType === type ? 'var(--architect-blue)' : 'var(--canvas-border)'}`,
-                  }}
                 >
-                  {type === 'quadratic' ? 'Quad' : type === 'cubic' ? 'Cubic' : 'S-Curve'}
+                  {label}
                 </button>
               ))}
             </div>
           </div>
         )}
 
-        {/* Opacity */}
         <div>
-          <label className="text-sm font-medium block mb-3" style={{ color: 'var(--pencil-lead)' }}>
-            Opacity
-            <span className="ml-2 font-mono" style={{ color: 'var(--architect-orange)' }}>
-              {Math.round(opacity * 100)}%
-            </span>
-          </label>
+          <div className="field-label">
+            <span>Opacity</span>
+            <span className="field-value">{Math.round(opacity * 100)}%</span>
+          </div>
           <Slider
             min={0}
             max={100}
@@ -279,70 +243,14 @@ export default function Toolbar({
             onValueChange={(value) => onOpacityChange(value[0] / 100)}
             className="w-full"
           />
-          <div className="flex justify-between text-xs mt-1" style={{
-            color: 'var(--pencil-lead)',
-            opacity: 0.6,
-            fontFamily: 'JetBrains Mono, monospace'
-          }}>
-            <span>0%</span>
-            <span>100%</span>
-          </div>
         </div>
+      </Section>
 
-        {/* Grid Toggle */}
-        <div className="flex items-center justify-between">
-          <label className="text-sm font-medium" style={{ color: 'var(--pencil-lead)' }}>
-            Grid
-          </label>
-          <button
-            onClick={onToggleGrid}
-            className="px-4 py-2 rounded-md text-sm font-medium transition-all"
-            style={{
-              background: showGrid ? 'var(--architect-blue)' : 'var(--graph-lines)',
-              color: showGrid ? 'white' : 'var(--pencil-lead)',
-              border: showGrid ? 'none' : '1px solid var(--canvas-border)'
-            }}
-          >
-            {showGrid ? 'Visible' : 'Hidden'}
-          </button>
-        </div>
-
-        {/* Axis Units Toggle */}
-        <div className="flex items-center justify-between">
-          <label className="text-sm font-medium" style={{ color: 'var(--pencil-lead)' }}>
-            Axis Units
-          </label>
-          <button
-            onClick={onToggleAxisUnits}
-            className="px-4 py-2 rounded-md text-sm font-medium transition-all"
-            style={{
-              background: showAxisUnits ? 'var(--architect-blue)' : 'var(--graph-lines)',
-              color: showAxisUnits ? 'white' : 'var(--pencil-lead)',
-              border: showAxisUnits ? 'none' : '1px solid var(--canvas-border)'
-            }}
-          >
-            {showAxisUnits ? 'Visible' : 'Hidden'}
-          </button>
-        </div>
-
-        {/* Only Positive Toggle */}
-        <div className="flex items-center justify-between">
-          <label className="text-sm font-medium" style={{ color: 'var(--pencil-lead)' }}>
-            Only Positive
-          </label>
-          <button
-            onClick={onToggleOnlyPositive}
-            className="px-4 py-2 rounded-md text-sm font-medium transition-all"
-            style={{
-              background: showOnlyPositive ? 'var(--architect-blue)' : 'var(--graph-lines)',
-              color: showOnlyPositive ? 'white' : 'var(--pencil-lead)',
-              border: showOnlyPositive ? 'none' : '1px solid var(--canvas-border)'
-            }}
-          >
-            {showOnlyPositive ? 'On' : 'Off'}
-          </button>
-        </div>
-
+      <Section>
+        <Switch label="Grid" checked={showGrid} onClick={onToggleGrid} />
+        <Switch label="Axis units" checked={showAxisUnits} onClick={onToggleAxisUnits} />
+        <Switch label="Positive quadrant only" checked={showOnlyPositive} onClick={onToggleOnlyPositive} />
+      </Section>
     </div>
   );
 }

@@ -1,5 +1,6 @@
 'use client';
 
+import { Trash2 } from 'lucide-react';
 import type { FillArea } from '@/app/utils/canvas/fillArea';
 import { Slider } from './ui/slider';
 
@@ -26,115 +27,77 @@ export default function FillAreaEditor({
 
   if (fillAreas.length === 0) {
     return (
-      <div className="space-y-4">
-        <div className="text-center py-8">
-          <p className="text-sm" style={{ color: 'var(--pencil-lead)', opacity: 0.6 }}>
-            No fill areas created yet
-          </p>
-          <p className="text-xs mt-2" style={{ color: 'var(--pencil-lead)', opacity: 0.6, fontStyle: 'italic' }}>
-            Use Fill mode (■) to create areas by clicking boundary points
-          </p>
-        </div>
+      <div className="empty">
+        No fill areas yet. Choose the Fill tool and click boundary points on the canvas.
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
-      <div className="text-sm font-medium mb-3" style={{ color: 'var(--pencil-lead)' }}>
-        Fill Areas
-        <span className="ml-2 font-mono" style={{
-          color: 'var(--architect-orange)',
-          fontSize: '0.75rem'
-        }}>
-          ({fillAreas.length} total)
-        </span>
-      </div>
-
+    <div className="space-y-3">
       {fillAreas.map((fillArea, index) => (
-        <div
-          key={fillArea.id}
-          className="p-4 rounded-lg space-y-3"
-          style={{
-            border: '1.5px solid var(--canvas-border)',
-            background: 'white'
-          }}
-        >
+        <div key={fillArea.id} className="card space-y-3">
           {/* Fill Area Header */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
               <div
-                className="w-8 h-8 rounded-md"
+                className="shrink-0"
                 style={{
+                  width: 24,
+                  height: 24,
+                  borderRadius: 4,
                   backgroundColor: fillArea.color,
                   opacity: fillArea.opacity,
-                  border: '1px solid var(--canvas-border)'
+                  border: '1px solid var(--border-strong)'
                 }}
               />
-              <div>
-                <div className="text-sm font-medium" style={{ color: 'var(--pencil-lead)' }}>
-                  Fill #{index + 1}
-                </div>
-                <div className="text-xs" style={{ color: 'var(--pencil-lead)', opacity: 0.6 }}>
+              <div className="min-w-0">
+                <div style={{ fontSize: 13, fontWeight: 500 }}>Fill #{index + 1}</div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                   {fillArea.boundaryPoints.length} boundary points
                 </div>
               </div>
             </div>
-            <div className="flex gap-2">
+            <div className="flex items-center gap-1 shrink-0">
               {onEditBoundary && (
-                <button
-                  onClick={() => onEditBoundary(fillArea.id)}
-                  className="px-3 py-1.5 rounded-md text-xs font-medium transition-all hover:bg-blue-50"
-                  style={{
-                    color: '#3498db',
-                    border: '1px solid #3498db'
-                  }}
-                >
-                  Edit Boundary
+                <button onClick={() => onEditBoundary(fillArea.id)} className="btn btn-sm">
+                  Edit boundary
                 </button>
               )}
               <button
                 onClick={() => onDelete(index)}
-                className="px-3 py-1.5 rounded-md text-xs font-medium transition-all hover:bg-red-50"
-                style={{
-                  color: '#E74C3C',
-                  border: '1px solid #E74C3C'
-                }}
+                className="btn btn-ghost btn-icon btn-sm btn-danger"
+                aria-label="Delete fill area"
+                title="Delete fill area"
               >
-                Delete
+                <Trash2 size={14} />
               </button>
             </div>
           </div>
 
           {/* Color Picker */}
           <div>
-            <label className="text-xs font-medium block mb-2" style={{ color: 'var(--pencil-lead)' }}>
-              Color
-            </label>
+            <div className="field-label">Color</div>
             <div className="flex items-center gap-2 mb-2">
               <input
                 type="color"
                 value={fillArea.color}
                 onChange={(e) => onColorChange(index, e.target.value)}
-                className="w-10 h-10 rounded-md cursor-pointer"
-                style={{ border: '2px solid var(--canvas-border)' }}
+                className="color-input"
+                aria-label="Fill color"
               />
-              <span className="text-xs font-mono" style={{ color: 'var(--pencil-lead)' }}>
-                {fillArea.color.toUpperCase()}
-              </span>
+              <span className="field-value">{fillArea.color.toUpperCase()}</span>
             </div>
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-8 gap-1.5">
               {PRESET_FILL_COLORS.map(color => (
                 <button
                   key={color}
                   onClick={() => onColorChange(index, color)}
-                  className="w-full aspect-square rounded-md transition-all hover:scale-110"
-                  style={{
-                    backgroundColor: color,
-                    border: `2px solid ${color === fillArea.color ? 'var(--architect-orange)' : 'var(--canvas-border)'}`,
-                    boxShadow: color === fillArea.color ? '0 2px 8px rgba(230, 126, 34, 0.3)' : 'none'
-                  }}
+                  className="swatch"
+                  style={{ backgroundColor: color }}
+                  aria-pressed={color === fillArea.color}
                   title={color}
+                  aria-label={color}
                 />
               ))}
             </div>
@@ -142,12 +105,10 @@ export default function FillAreaEditor({
 
           {/* Opacity Slider */}
           <div>
-            <label className="text-xs font-medium block mb-2" style={{ color: 'var(--pencil-lead)' }}>
-              Opacity
-              <span className="ml-2 font-mono" style={{ color: 'var(--architect-orange)' }}>
-                {Math.round(fillArea.opacity * 100)}%
-              </span>
-            </label>
+            <div className="field-label">
+              <span>Opacity</span>
+              <span className="field-value">{Math.round(fillArea.opacity * 100)}%</span>
+            </div>
             <Slider
               min={0}
               max={100}
@@ -156,14 +117,6 @@ export default function FillAreaEditor({
               onValueChange={(value) => onOpacityChange(index, value[0] / 100)}
               className="w-full"
             />
-            <div className="flex justify-between text-xs mt-1" style={{
-              color: 'var(--pencil-lead)',
-              opacity: 0.6,
-              fontFamily: 'JetBrains Mono, monospace'
-            }}>
-              <span>0%</span>
-              <span>100%</span>
-            </div>
           </div>
         </div>
       ))}
