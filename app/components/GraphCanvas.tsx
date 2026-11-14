@@ -4835,8 +4835,8 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
         height={height}
         className="touch-none rounded"
         style={{
-          border: '2px solid var(--canvas-border)',
-          boxShadow: 'inset 0 0 0 1px rgba(255, 255, 255, 0.5)',
+          border: '1px solid var(--border)',
+          boxShadow: 'var(--shadow-sm)',
           cursor: isPanning ? 'grabbing' : 'crosshair'
         }}
         onClick={handleCanvasClick}

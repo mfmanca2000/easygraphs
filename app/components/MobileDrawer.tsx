@@ -37,30 +37,29 @@ export function MobileDrawer({ isOpen, onClose, children }: MobileDrawerProps) {
     <div className="lg:hidden fixed inset-0 z-50">
       {/* Backdrop */}
       <div
-        className="mobile-drawer-backdrop absolute inset-0"
+        className="absolute inset-0"
+        style={{ background: 'rgba(15, 23, 42, 0.4)' }}
         onClick={onClose}
         aria-hidden="true"
       />
 
       {/* Drawer */}
       <div
-        className={`mobile-drawer ${isOpen ? 'open' : ''} fixed inset-y-0 left-0 w-80 max-w-[85vw] bg-white shadow-2xl overflow-y-auto`}
+        className={`mobile-drawer ${isOpen ? 'open' : ''} fixed inset-y-0 left-0 w-80 max-w-[85vw] bg-white overflow-y-auto`}
+        style={{ boxShadow: 'var(--shadow-lg)' }}
       >
-        {/* Close Button */}
-        <button
-          onClick={onClose}
-          className="sticky top-0 right-0 ml-auto m-4 p-2 rounded-full shadow-lg transition-all hover:scale-110 z-10"
-          style={{
-            background: 'var(--architect-blue)',
-            color: 'white',
-          }}
-          aria-label="Close menu"
+        <div
+          className="sticky top-0 z-10 flex items-center justify-between bg-white px-4"
+          style={{ height: 48, borderBottom: '1px solid var(--border)' }}
         >
-          <X size={20} />
-        </button>
+          <span style={{ fontSize: 13, fontWeight: 600 }}>Tools</span>
+          <button onClick={onClose} className="btn btn-ghost btn-icon" aria-label="Close menu">
+            <X size={18} />
+          </button>
+        </div>
 
         {/* Drawer Content */}
-        <div className="px-4 pb-4 space-y-4">{children}</div>
+        <div>{children}</div>
       </div>
     </div>
   );

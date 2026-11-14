@@ -32,32 +32,26 @@ export function CollapsiblePanel({
   const expanded = mounted ? isExpanded : defaultExpanded;
 
   return (
-    <div className={`control-panel rounded-lg ${className}`}>
+    <div className={className} style={{ borderBottom: '1px solid var(--border)' }}>
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full flex items-center justify-between p-4 text-left hover:bg-black/5 transition-colors rounded-t-lg"
+        className="flex w-full items-center justify-between text-left"
+        style={{ height: 40, padding: '0 16px' }}
         aria-expanded={expanded}
       >
-        <h3
-          className="text-sm font-semibold"
-          style={{
-            color: 'var(--architect-blue)',
-            fontFamily: 'JetBrains Mono, monospace',
-            letterSpacing: '0.05em',
-            textTransform: 'uppercase',
-          }}
-        >
-          {title}
-        </h3>
+        <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{title}</h3>
         <ChevronDown
-          className={`chevron-icon ${expanded ? 'rotated' : ''}`}
-          size={18}
-          style={{ color: 'var(--architect-blue)' }}
+          size={16}
+          style={{
+            color: 'var(--text-muted)',
+            transform: expanded ? 'rotate(180deg)' : 'none',
+            transition: 'transform 150ms',
+          }}
         />
       </button>
 
-      <div className={`collapsible-content ${expanded ? 'expanded' : ''}`}>
-        <div className="p-4 pt-0">{children}</div>
+      <div hidden={!expanded} className="px-4 pb-4">
+        {children}
       </div>
     </div>
   );
