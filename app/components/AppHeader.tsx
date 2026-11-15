@@ -89,8 +89,8 @@ export default function AppHeader({
 
   return (
     <header
-      className="relative z-30 flex shrink-0 items-center gap-2 bg-white px-3"
-      style={{ height: 52, borderBottom: '1px solid var(--border)' }}
+      className="relative z-30 flex shrink-0 flex-wrap items-center gap-x-2 bg-white px-3 py-1.5 lg:flex-nowrap lg:py-0"
+      style={{ minHeight: 52, borderBottom: '1px solid var(--border)' }}
     >
       <button
         onClick={onOpenMenu}
@@ -115,9 +115,13 @@ export default function AppHeader({
         <span className="hidden sm:inline">EasyGraphs</span>
       </h1>
 
-      <div className="divider" />
+      <div className="divider hidden lg:block" />
 
-      <div className="flex min-w-0 items-center gap-1 overflow-x-auto">
+      {/* Below lg this becomes a second full-width row so every action stays visible */}
+      <div
+        className="order-last -mx-3 mt-1.5 flex basis-full flex-wrap items-center gap-0.5 sm:gap-1 border-t px-3 pt-1.5 lg:order-none lg:mx-0 lg:mt-0 lg:basis-auto lg:min-w-0 lg:flex-nowrap lg:overflow-x-auto lg:border-t-0 lg:px-0 lg:pt-0"
+        style={{ borderColor: 'var(--border)' }}
+      >
         <button onClick={onUndo} className={iconBtn} title="Undo (Ctrl+Z)" aria-label="Undo">
           <Undo2 size={16} />
         </button>
@@ -125,7 +129,7 @@ export default function AppHeader({
           <Redo2 size={16} />
         </button>
 
-        <div className="divider mx-1" />
+        <div className="divider mx-1 hidden sm:block" />
 
         <button onClick={onZoomOut} className={iconBtn} title="Zoom Out" aria-label="Zoom out">
           <ZoomOut size={16} />
@@ -137,7 +141,7 @@ export default function AppHeader({
           <Maximize size={16} />
         </button>
 
-        <div className="divider mx-1" />
+        <div className="divider mx-1 hidden sm:block" />
 
         <button onClick={onCopy} disabled={!hasSelection} className={iconBtn} title="Copy (Ctrl+C)" aria-label="Copy">
           <Copy size={16} />
@@ -155,15 +159,15 @@ export default function AppHeader({
           <Trash2 size={16} />
         </button>
 
-        <div className="divider mx-1" />
+        <div className="divider mx-1 hidden sm:block" />
 
-        <button onClick={onGroup} disabled={!canGroup} className="btn btn-ghost" title="Group selected elements">
+        <button onClick={onGroup} disabled={!canGroup} className="btn btn-ghost max-sm:w-8 max-sm:px-0" title="Group selected elements" aria-label="Group">
           <Group size={16} />
-          Group
+          <span className="hidden sm:inline">Group</span>
         </button>
-        <button onClick={onUngroup} disabled={!canUngroup} className="btn btn-ghost" title="Ungroup selected elements">
+        <button onClick={onUngroup} disabled={!canUngroup} className="btn btn-ghost max-sm:w-8 max-sm:px-0" title="Ungroup selected elements" aria-label="Ungroup">
           <Ungroup size={16} />
-          Ungroup
+          <span className="hidden sm:inline">Ungroup</span>
         </button>
       </div>
 
