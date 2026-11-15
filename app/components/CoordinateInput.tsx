@@ -196,11 +196,11 @@ export default function CoordinateInput({ onAddLine, onAddPoint, currentPoint, s
           onClick={onToggleIntersections}
           className="btn btn-block"
           aria-pressed={!!showIntersections}
-          style={showIntersections ? {
-            background: 'var(--intersect-soft)',
-            borderColor: 'var(--intersect)',
-            color: 'var(--intersect)',
-          } : undefined}
+          style={{
+            background: showIntersections ? 'var(--intersect-soft)' : 'var(--surface)',
+            borderColor: showIntersections ? 'var(--intersect)' : 'var(--border-strong)',
+            color: showIntersections ? 'var(--intersect)' : 'var(--text)',
+          }}
         >
           {showIntersections ? 'Hide intersections' : 'Show intersections'}
         </button>

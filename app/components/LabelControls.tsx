@@ -480,9 +480,10 @@ export default function LabelControls({
                   <div
                     key={textBox.id}
                     className="card"
-                    style={editingTextBoxId === textBox.id
-                      ? { borderColor: 'var(--accent)', background: 'var(--accent-soft)' }
-                      : undefined}
+                    style={{
+                      borderColor: editingTextBoxId === textBox.id ? 'var(--accent)' : 'var(--border)',
+                      background: editingTextBoxId === textBox.id ? 'var(--accent-soft)' : 'var(--surface)',
+                    }}
                   >
                     <div className="flex items-center justify-between gap-2">
                       <button

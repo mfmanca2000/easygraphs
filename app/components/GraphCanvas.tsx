@@ -2,7 +2,7 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 'use client';
 
-import { useEffect, useRef, useCallback, useImperativeHandle, forwardRef } from 'react';
+import { useEffect, useRef, useCallback, useImperativeHandle, forwardRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { Parser } from 'expr-eval';
 import type {
@@ -250,6 +250,9 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
     if (!canvas) return false;
     return isClickNearAxisUtil(canvasX, canvasY, canvas.width, canvas.height, panOffset, getTitleOffset());
   }, [panOffset, getTitleOffset]);
+
+  // True while the pointer hovers empty space near an axis in select mode (drag there pans the graph)
+  const [hoverNearAxis, setHoverNearAxis] = useState(false);
 
   // Helper function to check if an element is within selection box
   const isElementInSelectionBox = useCallback((element: GraphElement, box: {start: Point, end: Point}): boolean => {
@@ -2799,6 +2802,16 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
       return; // Don't handle other interactions in fill mode
     }
 
+    // Show a hand cursor when a drag from here would pan (same condition as mouse down)
+    const canPanHere =
+      drawMode === 'select' &&
+      findClickedElement(canvasX, canvasY) === null &&
+      findClickedTextBox(canvasX, canvasY) === null &&
+      isClickNearAxis(canvasX, canvasY);
+    if (canPanHere !== hoverNearAxis) {
+      setHoverNearAxis(canPanHere);
+    }
+
     // Check for drag threshold (5px movement to start dragging)
     if (mouseDownPosition && mouseDownOnElementId !== null && !draggingEntireElement) {
       const deltaX = canvasX - mouseDownPosition.x;
@@ -4837,7 +4850,7 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
         style={{
           border: '1px solid var(--border)',
           boxShadow: 'var(--shadow-sm)',
-          cursor: isPanning ? 'grabbing' : 'crosshair'
+          cursor: isPanning ? 'grabbing' : (hoverNearAxis && drawMode === 'select') ? 'grab' : 'crosshair'
         }}
         onClick={handleCanvasClick}
         onContextMenu={handleContextMenu}
@@ -4845,7 +4858,10 @@ const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(function Gra
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
+        onMouseLeave={() => {
+          setHoverNearAxis(false);
+          handleMouseUp();
+        }}
         onTouchStart={(e) => {
           e.preventDefault();
           handleTouchStartForLongPress(e);
