@@ -1,12 +1,20 @@
 'use client';
 
 import { useState } from 'react';
+import { Plus } from 'lucide-react';
 
 export interface FunctionInputProps {
   onAddFunction: (formula: string, xMin: number, xMax: number, color: string, lineWidth: number) => void;
   strokeColor: string;
   strokeWidth: number;
 }
+
+const HELP: [string, string][] = [
+  ['Basic', '+, -, *, /, ^'],
+  ['Trig', 'sin(x), cos(x), tan(x)'],
+  ['Other', 'sqrt(x), abs(x), ln(x), exp(x)'],
+  ['Constants', 'pi, e'],
+];
 
 export default function FunctionInput({ onAddFunction, strokeColor, strokeWidth }: FunctionInputProps) {
   const [formula, setFormula] = useState('');
@@ -50,106 +58,74 @@ export default function FunctionInput({ onAddFunction, strokeColor, strokeWidth 
   return (
     <div>
       <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Formula Input */}
         <div>
-          <label className="text-sm font-medium block mb-2" style={{ color: 'var(--pencil-lead)' }}>
-            Formula f(x)
-          </label>
+          <label className="field-label" htmlFor="fn-formula">Formula f(x)</label>
           <input
+            id="fn-formula"
             type="text"
             value={formula}
             onChange={(e) => setFormula(e.target.value)}
             placeholder="e.g., x^2, sin(x), 2*x + 3"
-            className="w-full px-3 py-2 text-sm rounded-md"
-            style={{
-              border: '1.5px solid var(--canvas-border)',
-              fontFamily: 'JetBrains Mono, monospace',
-              color: 'var(--pencil-lead)'
-            }}
+            className="input input-mono"
           />
         </div>
 
-        {/* X Range */}
         <div>
-          <label className="text-sm font-medium block mb-2" style={{ color: 'var(--pencil-lead)' }}>
-            X Range
-          </label>
+          <div className="field-label">X range</div>
           <div className="grid grid-cols-2 gap-2">
             <input
               type="number"
               step="0.1"
               value={xMin}
               onChange={(e) => setXMin(e.target.value)}
-              placeholder="x-min"
-              className="w-full px-3 py-2 text-sm rounded-md"
-              style={{
-                border: '1.5px solid var(--canvas-border)',
-                fontFamily: 'JetBrains Mono, monospace',
-                color: 'var(--pencil-lead)'
-              }}
+              placeholder="min"
+              aria-label="x min"
+              className="input input-mono"
             />
             <input
               type="number"
               step="0.1"
               value={xMax}
               onChange={(e) => setXMax(e.target.value)}
-              placeholder="x-max"
-              className="w-full px-3 py-2 text-sm rounded-md"
-              style={{
-                border: '1.5px solid var(--canvas-border)',
-                fontFamily: 'JetBrains Mono, monospace',
-                color: 'var(--pencil-lead)'
-              }}
+              placeholder="max"
+              aria-label="x max"
+              className="input input-mono"
             />
           </div>
         </div>
 
-        {/* Error Message */}
         {error && (
-          <div className="px-3 py-2 rounded-md text-xs" style={{
-            background: 'rgba(231, 76, 60, 0.1)',
-            border: '1px solid #E74C3C',
-            color: '#E74C3C',
-            fontFamily: 'JetBrains Mono, monospace'
-          }}>
+          <div
+            role="alert"
+            style={{
+              fontSize: 12,
+              color: 'var(--danger)',
+              background: 'var(--danger-soft)',
+              border: '1px solid var(--danger)',
+              borderRadius: 6,
+              padding: '6px 10px',
+            }}
+          >
             {error}
           </div>
         )}
 
-        {/* Submit Button */}
-        <button
-          type="submit"
-          className="w-full px-4 py-2.5 rounded-md text-sm font-medium transition-all"
-          style={{
-            background: 'var(--architect-blue)',
-            color: 'white',
-            border: 'none'
-          }}
-        >
-          + Plot Function
+        <button type="submit" className="btn btn-primary btn-block">
+          <Plus size={16} />
+          Plot function
         </button>
       </form>
 
-      {/* Function Help */}
-      <div className="mt-4 pt-4 border-t" style={{ borderColor: 'var(--graph-lines)' }}>
-        <p className="text-xs font-medium mb-2" style={{
-          color: 'var(--pencil-lead)',
-          opacity: 0.7,
-          textTransform: 'uppercase',
-          letterSpacing: '0.05em'
-        }}>
-          Supported Functions
-        </p>
-        <div className="space-y-1 text-xs" style={{
-          fontFamily: 'JetBrains Mono, monospace',
-          color: 'var(--pencil-lead)',
-          opacity: 0.7
-        }}>
-          <div>• Basic: +, -, *, /, ^</div>
-          <div>• Trig: sin(x), cos(x), tan(x)</div>
-          <div>• Other: sqrt(x), abs(x), ln(x), exp(x)</div>
-          <div>• Constants: pi, e</div>
-        </div>
+      <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+        <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-muted)', marginBottom: 8 }}>Supported</div>
+        <dl className="grid gap-y-1 gap-x-3" style={{ gridTemplateColumns: 'auto 1fr', fontSize: 12 }}>
+          {HELP.map(([cat, items]) => (
+            <div key={cat} style={{ display: 'contents' }}>
+              <dt style={{ color: 'var(--text-muted)' }}>{cat}</dt>
+              <dd style={{ fontFamily: 'var(--font-mono)' }}>{items}</dd>
+            </div>
+          ))}
+        </dl>
       </div>
     </div>
   );

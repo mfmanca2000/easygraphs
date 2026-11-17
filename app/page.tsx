@@ -2,7 +2,6 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { flushSync } from 'react-dom';
-import { HelpCircle, Menu } from 'lucide-react';
 import GraphCanvas from './components/GraphCanvas';
 import type { DrawMode, Point, GraphCanvasHandle, GraphElement, EasyGraphsExport, GraphLabels, IntersectionPoint, IntersectionLabel } from '@/app/types/canvas';
 import { DEFAULT_LABELS } from '@/app/types/canvas';
@@ -19,7 +18,7 @@ import QuickGuidePanel from './components/QuickGuidePanel';
 import { CollapsiblePanel } from './components/CollapsiblePanel';
 import { Sidebar } from './components/Sidebar';
 import { MobileDrawer } from './components/MobileDrawer';
-import ActionsPanel from './components/ActionsPanel';
+import AppHeader from './components/AppHeader';
 
 export default function Home() {
   const canvasRef = useRef<GraphCanvasHandle>(null);
@@ -119,12 +118,12 @@ export default function Home() {
       const containerWidth = container.clientWidth;
       const containerHeight = container.clientHeight;
 
-      // Account for padding inside the container (p-4 = 16px, sm:p-6 = 24px)
-      const padding = window.innerWidth >= 640 ? 48 : 32; // 24px * 2 or 16px * 2
+      // Container has 12px padding on every side
+      const padding = 24;
 
       setCanvasSize({
-        width: Math.max(400, containerWidth - padding),
-        height: Math.max(400, containerHeight - padding)
+        width: Math.max(280, containerWidth - padding),
+        height: Math.max(280, containerHeight - padding)
       });
     };
 
@@ -773,66 +772,103 @@ export default function Home() {
 
   const canUngroup = hasSelection && isAnySelectedInGroup;
 
+  const modeHints: Record<DrawMode, string> = {
+    select: 'Click an element to select it. Drag to move, drag a point to edit.',
+    point: 'Click to place a point, or enter coordinates.',
+    line: 'Click two points, or enter coordinates.',
+    bezier: 'Click the two endpoints, then drag the control point.',
+    freehand: 'Click and drag to draw.',
+    function: 'Enter a formula f(x) to plot it.',
+    fill: 'Click boundary points to create a filled area.',
+    textbox: 'Click empty space to add a text box. Drag a box to move it, or a corner to resize.',
+  };
+
   return (
-    <div className="min-h-screen relative" style={{ paddingTop: '2rem', paddingBottom: '2rem' }}>
-      <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Header */}
-        <div className="text-center mb-8 animate-fadeInUp relative">
-          <div className="inline-block mb-4">
-            <h1 className="text-5xl sm:text-6xl font-bold tracking-tight" style={{
-              color: 'var(--pencil-lead)',
-              fontFamily: 'DM Sans, sans-serif',
-              letterSpacing: '-0.02em'
-            }}>
-              EasyGraphs
-            </h1>
-            <div className="h-1 mt-2 rounded-full" style={{
-              background: 'linear-gradient(90deg, var(--architect-blue), var(--architect-orange))',
-              width: '100%'
-            }}></div>
-          </div>
-          <button
-            onClick={() => setShowQuickGuide(true)}
-            className="absolute top-0 right-0 w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110"
-            style={{
-              background: 'var(--architect-blue)',
-              color: 'white',
-              border: '2px solid transparent'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'var(--architect-orange)';
-              e.currentTarget.style.borderColor = 'var(--architect-blue)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'var(--architect-blue)';
-              e.currentTarget.style.borderColor = 'transparent';
-            }}
-            title="Quick Guide"
-            aria-label="Open Quick Guide"
-          >
-            <HelpCircle size={20} />
-          </button>
-          <p className="text-lg" style={{ color: 'var(--architect-blue)', fontWeight: 500 }}>
-            Your digital technical drawing workspace
-          </p>
-        </div>
+    <div className="flex flex-col h-dvh">
+      <AppHeader
+        onUndo={handleUndo}
+        onRedo={handleRedo}
+        onExport={handleExport}
+        onExportJPEG={handleExportJPEG}
+        onExportPDF={handleExportPDF}
+        onExportJSON={handleExportJSON}
+        onImportJSON={handleImportJSON}
+        onCopy={handleCopy}
+        onPaste={handlePaste}
+        onDelete={handleDelete}
+        hasSelection={hasSelection}
+        onGroup={handleGroup}
+        onUngroup={handleUngroup}
+        canGroup={canGroup}
+        canUngroup={canUngroup}
+        onClear={handleClear}
+        onResetToDefault={handleResetToDefault}
+        onZoomIn={handleZoomIn}
+        onZoomOut={handleZoomOut}
+        onOpenGuide={() => setShowQuickGuide(true)}
+        onOpenMenu={() => setMobileDrawerOpen(true)}
+      />
 
-        {/* Mobile Hamburger Button */}
-        <button
-          className="fixed top-4 left-4 z-50 lg:hidden p-3 rounded-full shadow-lg transition-all hover:scale-110"
-          style={{
-            background: 'var(--architect-blue)',
-            color: 'white',
-          }}
-          onClick={() => setMobileDrawerOpen(true)}
-          aria-label="Open menu"
-        >
-          <Menu size={24} />
-        </button>
+      <MobileDrawer isOpen={mobileDrawerOpen} onClose={() => setMobileDrawerOpen(false)}>
+        <CollapsiblePanel id="toolbar" title="Tools" defaultExpanded={true}>
+          <Toolbar
+            showGrid={showGrid}
+            onToggleGrid={() => setShowGrid(!showGrid)}
+            showAxisUnits={showAxisUnits}
+            onToggleAxisUnits={() => setShowAxisUnits(!showAxisUnits)}
+            showOnlyPositive={showOnlyPositive}
+            onToggleOnlyPositive={() => setShowOnlyPositive(!showOnlyPositive)}
+            strokeColor={strokeColor}
+            onStrokeColorChange={setStrokeColor}
+            strokeWidth={strokeWidth}
+            onStrokeWidthChange={setStrokeWidth}
+            lineStyle={lineStyle}
+            onLineStyleChange={setLineStyle}
+            opacity={opacity}
+            onOpacityChange={setOpacity}
+            arrowType={arrowType}
+            onArrowTypeChange={setArrowType}
+            arrowSize={arrowSize}
+            onArrowSizeChange={setArrowSize}
+            curveType={curveType}
+            onCurveTypeChange={setCurveType}
+            drawMode={drawMode}
+            onDrawModeChange={setDrawMode}
+          />
+        </CollapsiblePanel>
 
-        {/* Mobile Drawer */}
-        <MobileDrawer isOpen={mobileDrawerOpen} onClose={() => setMobileDrawerOpen(false)}>
-          <CollapsiblePanel id="toolbar" title="Drawing Tools" defaultExpanded={true}>
+        <CollapsiblePanel id="labels" title="Labels & Text" defaultExpanded={true}>
+          <LabelControls
+            labels={labels}
+            onLabelsChange={handleLabelsChange}
+            elements={elements}
+            intersectionPoints={intersectionPoints}
+            onCharacterPaletteOpen={() => setShowCharacterPalette(true)}
+            onTextBoxSelect={handleTextBoxSelect}
+          />
+        </CollapsiblePanel>
+
+        <CollapsiblePanel id="fill" title="Fill Areas" defaultExpanded={true}>
+          <FillAreaEditor
+            fillAreas={fillAreas}
+            onColorChange={handleFillColorChange}
+            onOpacityChange={handleFillOpacityChange}
+            onDelete={handleFillDelete}
+            onEditBoundary={handleEditBoundary}
+          />
+        </CollapsiblePanel>
+
+        <CollapsiblePanel id="scale" title="Scale" defaultExpanded={true}>
+          <ScaleControls
+            scale={scale}
+            onScaleChange={setScale}
+          />
+        </CollapsiblePanel>
+      </MobileDrawer>
+
+      <div className="flex flex-1 min-h-0">
+        <Sidebar onCollapseChange={setSidebarCollapsed}>
+          <CollapsiblePanel id="toolbar" title="Tools" defaultExpanded={true}>
             <Toolbar
               showGrid={showGrid}
               onToggleGrid={() => setShowGrid(!showGrid)}
@@ -859,7 +895,7 @@ export default function Home() {
             />
           </CollapsiblePanel>
 
-          <CollapsiblePanel id="labels" title="Labels & Text" defaultExpanded={true}>
+          <CollapsiblePanel id="labels" title="Labels & Text" defaultExpanded={false}>
             <LabelControls
               labels={labels}
               onLabelsChange={handleLabelsChange}
@@ -870,7 +906,7 @@ export default function Home() {
             />
           </CollapsiblePanel>
 
-          <CollapsiblePanel id="fill" title="Fill Areas" defaultExpanded={true}>
+          <CollapsiblePanel id="fill" title="Fill Areas" defaultExpanded={false}>
             <FillAreaEditor
               fillAreas={fillAreas}
               onColorChange={handleFillColorChange}
@@ -880,369 +916,167 @@ export default function Home() {
             />
           </CollapsiblePanel>
 
-          <CollapsiblePanel id="scale" title="Scale Controls" defaultExpanded={true}>
+          <CollapsiblePanel id="scale" title="Scale" defaultExpanded={true}>
             <ScaleControls
               scale={scale}
               onScaleChange={setScale}
             />
           </CollapsiblePanel>
+        </Sidebar>
 
-
-          
-          {/* <CollapsiblePanel id="session" title="Session Info" defaultExpanded={true}>
-            <div className="grid grid-cols-3 gap-3" style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '0.875rem' }}>
-              <div className="text-center">
-                <div style={{ color: 'var(--pencil-lead)', opacity: 0.6, fontSize: '0.75rem', marginBottom: '4px' }}>Elements</div>
-                <div style={{
-                  color: 'var(--architect-orange)',
-                  fontWeight: 600,
-                  fontSize: '1.25rem'
-                }}>
-                  {elementCount}
-                </div>
-              </div>
-              <div className="text-center">
-                <div style={{ color: 'var(--pencil-lead)', opacity: 0.6, fontSize: '0.75rem', marginBottom: '4px' }}>Mode</div>
-                <div style={{
-                  color: 'var(--architect-blue)',
-                  fontWeight: 600,
-                  textTransform: 'capitalize',
-                  fontSize: '0.875rem'
-                }}>
-                  {drawMode}
-                </div>
-              </div>
-              <div className="text-center">
-                <div style={{ color: 'var(--pencil-lead)', opacity: 0.6, fontSize: '0.75rem', marginBottom: '4px' }}>Scale</div>
-                <div style={{ color: 'var(--pencil-lead)', fontWeight: 600, fontSize: '0.875rem' }}>
-                  {scale.x}×{scale.y}
-                </div>
-              </div>
-            </div>
-          </CollapsiblePanel> */}
-        </MobileDrawer>
-
-        {/* Main Layout */}
-        <div className="flex gap-6">
-          {/* Desktop Sidebar */}
-          <Sidebar onCollapseChange={setSidebarCollapsed}>
-            <CollapsiblePanel id="toolbar" title="Drawing Tools" defaultExpanded={true}>
-              <Toolbar
-                showGrid={showGrid}
-                onToggleGrid={() => setShowGrid(!showGrid)}
-                showAxisUnits={showAxisUnits}
-                onToggleAxisUnits={() => setShowAxisUnits(!showAxisUnits)}
-                showOnlyPositive={showOnlyPositive}
-                onToggleOnlyPositive={() => setShowOnlyPositive(!showOnlyPositive)}
-                strokeColor={strokeColor}
-                onStrokeColorChange={setStrokeColor}
-                strokeWidth={strokeWidth}
-                onStrokeWidthChange={setStrokeWidth}
-                lineStyle={lineStyle}
-                onLineStyleChange={setLineStyle}
-                opacity={opacity}
-                onOpacityChange={setOpacity}
-                arrowType={arrowType}
-                onArrowTypeChange={setArrowType}
-                arrowSize={arrowSize}
-                onArrowSizeChange={setArrowSize}
-                curveType={curveType}
-                onCurveTypeChange={setCurveType}
-                drawMode={drawMode}
-                onDrawModeChange={setDrawMode}
-              />
-            </CollapsiblePanel>
-
-            <CollapsiblePanel id="labels" title="Labels & Text" defaultExpanded={false}>
-              <LabelControls
-                labels={labels}
-                onLabelsChange={handleLabelsChange}
-                elements={elements}
-                intersectionPoints={intersectionPoints}
-                onCharacterPaletteOpen={() => setShowCharacterPalette(true)}
-                onTextBoxSelect={handleTextBoxSelect}
-              />
-            </CollapsiblePanel>
-
-            <CollapsiblePanel id="fill" title="Fill Areas" defaultExpanded={false}>
-              <FillAreaEditor
-                fillAreas={fillAreas}
-                onColorChange={handleFillColorChange}
-                onOpacityChange={handleFillOpacityChange}
-                onDelete={handleFillDelete}
-                onEditBoundary={handleEditBoundary}
-              />
-            </CollapsiblePanel>
-
-            <CollapsiblePanel id="scale" title="Scale Controls" defaultExpanded={true}>
-              <ScaleControls
-                scale={scale}
-                onScaleChange={setScale}
-              />
-            </CollapsiblePanel>
-
-
-
-            {/* <CollapsiblePanel id="session" title="Session Info" defaultExpanded={true}>
-              <div className="space-y-2" style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '0.875rem' }}>
-                <div className="flex justify-between items-center">
-                  <span style={{ color: 'var(--pencil-lead)', opacity: 0.7 }}>Elements:</span>
-                  <span style={{
-                    color: 'var(--architect-orange)',
-                    fontWeight: 600,
-                    padding: '2px 8px',
-                    background: 'rgba(230, 126, 34, 0.1)',
-                    borderRadius: '4px'
-                  }}>
-                    {elementCount}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span style={{ color: 'var(--pencil-lead)', opacity: 0.7 }}>Mode:</span>
-                  <span style={{
-                    color: 'var(--architect-blue)',
-                    fontWeight: 600,
-                    textTransform: 'capitalize'
-                  }}>
-                    {drawMode}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span style={{ color: 'var(--pencil-lead)', opacity: 0.7 }}>Scale:</span>
-                  <span style={{ color: 'var(--pencil-lead)', fontWeight: 600 }}>
-                    {scale.x} × {scale.y}
-                  </span>
-                </div>
-              </div>
-            </CollapsiblePanel> */}
-          </Sidebar>
-
-          {/* Canvas Area - takes remaining space */}
-          <main className="flex-1 animate-fadeInUp delay-200 space-y-4">
-            {/* Actions Panel */}
-            <div style={{
-              width: '100%',
-              maxWidth: '92%',
-              margin: '0 auto 16px auto'
-            }}>
-              <ActionsPanel
-                onUndo={handleUndo}
-                onRedo={handleRedo}
-                onExport={handleExport}
-                onExportJPEG={handleExportJPEG}
-                onExportPDF={handleExportPDF}
-                onExportJSON={handleExportJSON}
-                onImportJSON={handleImportJSON}
-                onCopy={handleCopy}
-                onPaste={handlePaste}
-                onDelete={handleDelete}
-                hasSelection={hasSelection}
-                onGroup={handleGroup}
-                onUngroup={handleUngroup}
-                canGroup={canGroup}
-                canUngroup={canUngroup}
-                onClear={handleClear}
-                onResetToDefault={handleResetToDefault}
-                onZoomIn={handleZoomIn}
-                onZoomOut={handleZoomOut}
-              />
-            </div>
-
+        <main className="flex flex-1 min-w-0 flex-col xl:flex-row overflow-y-auto xl:overflow-hidden">
+          {/* Canvas column */}
+          <div className="flex flex-col xl:flex-1 xl:min-w-0 xl:h-full">
             <div
               ref={containerRef}
-              className="canvas-container rounded-lg p-4 sm:p-6"
+              className="h-[62vh] min-h-[420px] xl:h-auto xl:flex-1 xl:min-h-0 p-3 overflow-hidden flex items-center justify-center"
+            >
+              <GraphCanvas
+                ref={canvasRef}
+                width={canvasSize.width}
+                height={canvasSize.height}
+                showGrid={showGrid}
+                showAxisUnits={showAxisUnits}
+                showOnlyPositive={showOnlyPositive}
+                strokeColor={strokeColor}
+                strokeWidth={strokeWidth}
+                lineStyle={lineStyle}
+                opacity={opacity}
+                arrowType={arrowType}
+                arrowSize={arrowSize}
+                curveType={curveType}
+                drawMode={drawMode}
+                scale={scale}
+                showIntersections={showIntersections}
+                intersectionPoints={intersectionPoints}
+                onCoordinateClick={handleCoordinateClick}
+                onSelectionChange={handleSelectionChange}
+                onElementsChange={handleElementsChange}
+                onScaleChange={setScale}
+                onLabelsChange={handleCanvasLabelsChange}
+                onFillAreasChange={handleFillAreasChange}
+                onIntersectionContextMenu={handleIntersectionContextMenu}
+                onElementContextMenu={handleElementContextMenu}
+                onAxisContextMenu={handleAxisContextMenu}
+                onFillAreaContextMenu={handleFillAreaContextMenu}
+              />
+            </div>
+
+            {/* Status bar */}
+            <div
+              className="flex shrink-0 items-center justify-between gap-4 bg-white"
               style={{
-                width: '100%',
-                maxWidth: '92%',
-                height: 'calc(100vh - 650px)',
-                minHeight: '400px',
-                margin: '0 auto'
+                height: 28,
+                padding: '0 12px',
+                borderTop: '1px solid var(--border)',
+                fontSize: 12,
+                color: 'var(--text-muted)',
               }}
             >
-              <div className="flex justify-center items-center h-full" style={{ overflow: 'hidden' }}>
-                <GraphCanvas
-                  ref={canvasRef}
-                  width={canvasSize.width}
-                  height={canvasSize.height}
-                  showGrid={showGrid}
-                  showAxisUnits={showAxisUnits}
-                  showOnlyPositive={showOnlyPositive}
+              <span className="truncate">{modeHints[drawMode]}</span>
+              <span className="hidden sm:inline shrink-0" style={{ fontFamily: 'var(--font-mono)' }}>
+                {elementCount} elements · {Math.round(scale.x)} × {Math.round(scale.y)} px/unit
+              </span>
+            </div>
+          </div>
+
+          {/* Inspector */}
+          <aside
+            className="xl:w-[300px] xl:shrink-0 xl:overflow-y-auto border-t xl:border-t-0 xl:border-l bg-white"
+            style={{ borderColor: 'var(--border)' }}
+          >
+            <section style={{ padding: 16, borderBottom: '1px solid var(--border)' }}>
+              <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 12 }}>
+                {drawMode === 'function' ? 'Function Plot' : 'Coordinates'}
+              </h3>
+              {drawMode === 'function' ? (
+                <FunctionInput
+                  onAddFunction={handleAddFunction}
                   strokeColor={strokeColor}
                   strokeWidth={strokeWidth}
-                  lineStyle={lineStyle}
-                  opacity={opacity}
-                  arrowType={arrowType}
-                  arrowSize={arrowSize}
-                  curveType={curveType}
-                  drawMode={drawMode}
-                  scale={scale}
-                  showIntersections={showIntersections}
-                  intersectionPoints={intersectionPoints}
-                  onCoordinateClick={handleCoordinateClick}
-                  onSelectionChange={handleSelectionChange}
-                  onElementsChange={handleElementsChange}
-                  onScaleChange={setScale}
-                  onLabelsChange={handleCanvasLabelsChange}
-                  onFillAreasChange={handleFillAreasChange}
-                  onIntersectionContextMenu={handleIntersectionContextMenu}
-                  onElementContextMenu={handleElementContextMenu}
-                  onAxisContextMenu={handleAxisContextMenu}
-                  onFillAreaContextMenu={handleFillAreaContextMenu}
                 />
-              </div>
-            </div>
+              ) : (
+                <CoordinateInput
+                  onAddLine={handleAddLineByCoordinates}
+                  onAddPoint={handleAddPointByCoordinates}
+                  currentPoint={currentPoint}
+                  selectedElement={selectedElement}
+                  selectedElementId={selectedElementId}
+                  selectedElements={currentSelection.elementIds.size > 0 ?
+                    Array.from(currentSelection.elementIds).map(id => ({
+                      id,
+                      element: elements[id]
+                    })).filter(item => item.element) : undefined
+                  }
+                  onTogglePointProjection={handleTogglePointProjection}
+                  showIntersections={showIntersections}
+                  onToggleIntersections={handleToggleIntersections}
+                  drawMode={drawMode}
+                  elementCount={elementCount}
+                />
+              )}
+            </section>
 
-            {/* Coordinates Panel - below canvas */}
-            <div style={{
-              width: '100%',
-              maxWidth: '92%',
-              margin: '16px auto 0 auto'
-            }}>
-              <div className="control-panel rounded-lg p-4 sm:p-6">
-                <h3 className="text-lg font-semibold mb-4" style={{ color: 'var(--architect-blue)' }}>
-                  {drawMode === 'function' ? 'Function Plot' : 'Coordinates'}
-                </h3>
-                {drawMode === 'function' ? (
-                  <FunctionInput
-                    onAddFunction={handleAddFunction}
-                    strokeColor={strokeColor}
-                    strokeWidth={strokeWidth}
-                  />
-                ) : (
-                  <CoordinateInput
-                    onAddLine={handleAddLineByCoordinates}
-                    onAddPoint={handleAddPointByCoordinates}
-                    currentPoint={currentPoint}
-                    selectedElement={selectedElement}
-                    selectedElementId={selectedElementId}
-                    selectedElements={currentSelection.elementIds.size > 0 ?
-                      Array.from(currentSelection.elementIds).map(id => ({
-                        id,
-                        element: elements[id]
-                      })).filter(item => item.element) : undefined
-                    }
-                    onTogglePointProjection={handleTogglePointProjection}
-                    showIntersections={showIntersections}
-                    onToggleIntersections={handleToggleIntersections}
-                    drawMode={drawMode}
-                    elementCount={elementCount}
-                  />
-                )}
-              </div>
-            </div>
-
-            {/* Intersections Panel - below coordinates */}
             {showIntersections && intersectionPoints.length > 0 && (
-              <div style={{
-                width: '100%',
-                maxWidth: '92%',
-                margin: '16px auto 0 auto'
-              }}>
-                <div className="control-panel rounded-lg p-4 sm:p-6">
-                  <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-lg font-semibold" style={{ color: '#9B59B6' }}>
-                      Intersections ({intersectionPoints.filter(i => i.visible !== false).length}/{intersectionPoints.length})
-                    </h3>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={handleShowAllIntersections}
-                        className="px-3 py-1.5 rounded-md text-xs font-medium transition-all"
-                        style={{
-                          background: 'transparent',
-                          color: '#9B59B6',
-                          border: '1px solid #9B59B6'
-                        }}
-                      >
-                        Show All
-                      </button>
-                      <button
-                        onClick={handleHideAllIntersections}
-                        className="px-3 py-1.5 rounded-md text-xs font-medium transition-all"
-                        style={{
-                          background: 'transparent',
-                          color: '#9B59B6',
-                          border: '1px solid #9B59B6'
-                        }}
-                      >
-                        Hide All
-                      </button>
-                    </div>
-                  </div>
-                  <div className="max-h-96 overflow-y-auto space-y-3">
-                    {intersectionPoints.map((intersection, idx) => (
-                      <div key={idx} className="p-3 rounded-md" style={{
-                        background: 'rgba(155, 89, 182, 0.05)',
-                        border: '1px solid rgba(155, 89, 182, 0.3)',
-                        opacity: intersection.visible === false ? 0.5 : 1
-                      }}>
-                        <div className="flex justify-between items-start mb-2">
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="checkbox"
-                              checked={intersection.visible !== false}
-                              onChange={() => handleToggleIntersectionVisibility(idx)}
-                              className="w-4 h-4 cursor-pointer"
-                              style={{
-                                accentColor: '#9B59B6'
-                              }}
-                            />
-                            <span className="text-xs font-semibold" style={{ color: '#9B59B6' }}>
-                              Point #{idx + 1}
-                            </span>
-                          </div>
-                          <span className="text-xs" style={{
-                            color: 'var(--pencil-lead)',
-                            opacity: 0.6,
-                            fontFamily: 'JetBrains Mono, monospace'
-                          }}>
-                            El {intersection.elementId1} ∩ El {intersection.elementId2}
-                          </span>
-                        </div>
-                        <div className="px-3 py-2 rounded-md mb-2" style={{
-                          background: 'rgba(155, 89, 182, 0.1)',
-                          border: '1px solid rgba(155, 89, 182, 0.2)',
-                          fontFamily: 'JetBrains Mono, monospace',
-                          fontSize: '0.875rem',
-                          color: '#9B59B6',
-                          fontWeight: 600
-                        }}>
-                          ({intersection.point.x.toFixed(2)}, {intersection.point.y.toFixed(2)})
-                        </div>
-                        <button
-                          onClick={() => handleToggleIntersectionProjection(idx)}
-                          className="w-full px-3 py-2 rounded-md text-sm font-medium transition-all"
-                          style={{
-                            background: intersection.showProjection ? '#9B59B6' : 'transparent',
-                            color: intersection.showProjection ? 'white' : '#9B59B6',
-                            border: `1.5px solid #9B59B6`
-                          }}
-                        >
-                          {intersection.showProjection ? '✓ Hide' : '+ Show'} Projection
-                        </button>
-                      </div>
-                    ))}
+              <section style={{ padding: 16, borderBottom: '1px solid var(--border)' }}>
+                <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
+                  <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
+                    Intersections{' '}
+                    <span className="field-value" style={{ color: 'var(--text-muted)' }}>
+                      {intersectionPoints.filter(i => i.visible !== false).length}/{intersectionPoints.length}
+                    </span>
+                  </h3>
+                  <div className="flex gap-2">
+                    <button onClick={handleShowAllIntersections} className="btn btn-sm">
+                      Show all
+                    </button>
+                    <button onClick={handleHideAllIntersections} className="btn btn-sm">
+                      Hide all
+                    </button>
                   </div>
                 </div>
-              </div>
+                <div className="space-y-3">
+                  {intersectionPoints.map((intersection, idx) => (
+                    <div
+                      key={idx}
+                      className="card space-y-2"
+                      style={{ opacity: intersection.visible === false ? 0.5 : 1 }}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={intersection.visible !== false}
+                            onChange={() => handleToggleIntersectionVisibility(idx)}
+                            className="w-4 h-4 cursor-pointer"
+                            style={{ accentColor: 'var(--intersect)' }}
+                            aria-label={`Show point ${idx + 1}`}
+                          />
+                          <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--intersect)' }}>
+                            Point #{idx + 1}
+                          </span>
+                        </div>
+                        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-muted)' }}>
+                          El {intersection.elementId1} ∩ El {intersection.elementId2}
+                        </span>
+                      </div>
+                      <span className="coord">
+                        ({intersection.point.x.toFixed(2)}, {intersection.point.y.toFixed(2)})
+                      </span>
+                      <button
+                        onClick={() => handleToggleIntersectionProjection(idx)}
+                        className="btn btn-sm btn-block"
+                        aria-pressed={!!intersection.showProjection}
+                      >
+                        {intersection.showProjection ? 'Hide projection' : 'Show projection'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </section>
             )}
-          </main>
-        </div>
-
-        {/* Footer */}
-        <footer className="mt-12 text-center animate-fadeIn delay-400">
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full" style={{
-            background: 'rgba(255, 255, 255, 0.6)',
-            border: '1px solid var(--canvas-border)',
-            color: 'var(--architect-blue)',
-            fontSize: '0.875rem',
-            fontFamily: 'JetBrains Mono, monospace'
-          }}>
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ opacity: 0.7 }}>
-              <path d="M8 2L8 14M2 8L14 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-            </svg>
-            <span>Touch-enabled • Responsive • Precise</span>
-          </div>
-        </footer>
+          </aside>
+        </main>
       </div>
 
       {/* Intersection Context Menu */}
@@ -1253,13 +1087,10 @@ export default function Home() {
             onClick={handleCloseIntersectionContextMenu}
           />
           <div
-            className="fixed z-50 rounded-lg shadow-lg py-2"
+            className="menu fixed z-50"
             style={{
               left: `${intersectionContextMenu.x}px`,
               top: `${intersectionContextMenu.y}px`,
-              background: '#FFFFFF',
-              border: '2px solid #9B59B6',
-              minWidth: '180px'
             }}
           >
             <button
@@ -1282,19 +1113,9 @@ export default function Home() {
                 }
                 handleCloseIntersectionContextMenu();
               }}
-              className="w-full px-4 py-2 text-left text-sm font-medium transition-all hover:bg-opacity-10"
-              style={{
-                color: '#9B59B6',
-                background: 'transparent'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(155, 89, 182, 0.1)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'transparent';
-              }}
+              className="menu-item"
             >
-              {showIntersections && intersectionPoints[intersectionContextMenu.intersectionIndex]?.visible !== false ? '✓ Hide Point' : '+ Show Point'}
+              {showIntersections && intersectionPoints[intersectionContextMenu.intersectionIndex]?.visible !== false ? 'Hide point' : 'Show point'}
             </button>
             <button
               onClick={() => {
@@ -1305,37 +1126,17 @@ export default function Home() {
                 handleToggleIntersectionProjection(intersectionContextMenu.intersectionIndex);
                 handleCloseIntersectionContextMenu();
               }}
-              className="w-full px-4 py-2 text-left text-sm font-medium transition-all hover:bg-opacity-10"
-              style={{
-                color: '#9B59B6',
-                background: 'transparent'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(155, 89, 182, 0.1)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'transparent';
-              }}
+              className="menu-item"
             >
-              {showIntersections && intersectionPoints[intersectionContextMenu.intersectionIndex]?.showProjection ? '✓ Hide Projection' : '+ Show Projection'}
+              {showIntersections && intersectionPoints[intersectionContextMenu.intersectionIndex]?.showProjection ? 'Hide projection' : 'Show projection'}
             </button>
             <button
               onClick={() => {
                 handleOpenAddIntersectionLabelModal(intersectionContextMenu.intersectionIndex);
               }}
-              className="w-full px-4 py-2 text-left text-sm font-medium transition-all hover:bg-opacity-10"
-              style={{
-                color: '#9B59B6',
-                background: 'transparent'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(155, 89, 182, 0.1)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'transparent';
-              }}
+              className="menu-item"
             >
-              + Add Label
+              Add label
             </button>
           </div>
         </>
@@ -1349,13 +1150,10 @@ export default function Home() {
             onClick={handleCloseElementContextMenu}
           />
           <div
-            className="fixed z-50 rounded-lg shadow-lg py-2"
+            className="menu fixed z-50"
             style={{
               left: `${elementContextMenu.x}px`,
               top: `${elementContextMenu.y}px`,
-              background: '#FFFFFF',
-              border: '2px solid #E74C3C',
-              minWidth: '180px'
             }}
           >
             {canvasRef.current.getElements()[elementContextMenu.elementId]?.type === 'point' && (
@@ -1363,38 +1161,18 @@ export default function Home() {
                 onClick={() => {
                   handleTogglePointProjectionFromMenu(elementContextMenu.elementId);
                 }}
-                className="w-full px-4 py-2 text-left text-sm font-medium transition-all hover:bg-opacity-10"
-                style={{
-                  color: '#E74C3C',
-                  background: 'transparent'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(231, 76, 60, 0.1)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'transparent';
-                }}
+                className="menu-item"
               >
-                {canvasRef.current.getElements()[elementContextMenu.elementId]?.showProjection ? '✓ Hide Projection' : '+ Show Projection'}
+                {canvasRef.current.getElements()[elementContextMenu.elementId]?.showProjection ? 'Hide projection' : 'Show projection'}
               </button>
             )}
             <button
               onClick={() => {
                 handleOpenAddLabelModal(elementContextMenu.elementId);
               }}
-              className="w-full px-4 py-2 text-left text-sm font-medium transition-all hover:bg-opacity-10"
-              style={{
-                color: '#E74C3C',
-                background: 'transparent'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(231, 76, 60, 0.1)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'transparent';
-              }}
+              className="menu-item"
             >
-              + Add Label
+              Add label
             </button>
           </div>
         </>
@@ -1408,32 +1186,19 @@ export default function Home() {
             onClick={handleCloseAxisContextMenu}
           />
           <div
-            className="fixed z-50 rounded-lg shadow-lg py-2"
+            className="menu fixed z-50"
             style={{
               left: `${axisContextMenu.x}px`,
               top: `${axisContextMenu.y}px`,
-              background: '#FFFFFF',
-              border: '2px solid #2B5F82',
-              minWidth: '180px'
             }}
           >
             <button
               onClick={() => {
                 handleOpenAddAxisLabelModal(axisContextMenu.axis);
               }}
-              className="w-full px-4 py-2 text-left text-sm font-medium transition-all hover:bg-opacity-10"
-              style={{
-                color: '#2B5F82',
-                background: 'transparent'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(43, 95, 130, 0.1)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'transparent';
-              }}
+              className="menu-item"
             >
-              + Add Label to {axisContextMenu.axis.toUpperCase()}-Axis
+              Add label to {axisContextMenu.axis.toUpperCase()}-Axis
             </button>
           </div>
         </>
@@ -1447,13 +1212,10 @@ export default function Home() {
             onClick={handleCloseFillAreaContextMenu}
           />
           <div
-            className="fixed z-50 rounded-lg shadow-lg py-2"
+            className="menu fixed z-50"
             style={{
               left: `${fillAreaContextMenu.x}px`,
               top: `${fillAreaContextMenu.y}px`,
-              background: '#FFFFFF',
-              border: '2px solid #F39C12',
-              minWidth: '180px'
             }}
           >
             <button
@@ -1461,17 +1223,7 @@ export default function Home() {
                 handleFillDelete(fillAreaContextMenu.fillAreaIndex);
                 handleCloseFillAreaContextMenu();
               }}
-              className="w-full px-4 py-2 text-left text-sm font-medium transition-all hover:bg-opacity-10"
-              style={{
-                color: '#E74C3C',
-                background: 'transparent'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(231, 76, 60, 0.1)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'transparent';
-              }}
+              className="menu-item danger"
             >
               Delete Fill Area
             </button>

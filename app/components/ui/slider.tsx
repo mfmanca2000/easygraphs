@@ -18,20 +18,17 @@ const Slider = React.forwardRef<
     {...props}
   >
     <SliderPrimitive.Track
-      className="relative h-2 w-full grow overflow-hidden rounded"
-      style={{
-        background: 'var(--architect-blue)',
-        border: '2px solid var(--pencil-lead)'
-      }}
+      className="relative h-1 w-full grow overflow-hidden rounded-full"
+      style={{ background: 'var(--border-strong)' }}
     >
-      <SliderPrimitive.Range className="absolute h-full" style={{ background: 'var(--architect-blue)' }} />
+      <SliderPrimitive.Range className="absolute h-full" style={{ background: 'var(--accent)' }} />
     </SliderPrimitive.Track>
     <SliderPrimitive.Thumb
-      className="block h-5 w-5 rounded-full shadow transition-all hover:scale-110 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 cursor-pointer"
+      className="block h-4 w-4 rounded-full focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 cursor-pointer"
       style={{
-        background: 'var(--architect-orange)',
-        border: '3px solid white',
-        boxShadow: '0 2px 6px rgba(0,0,0,0.3)'
+        background: '#fff',
+        border: '2px solid var(--accent)',
+        boxShadow: 'var(--shadow-sm)'
       }}
     />
   </SliderPrimitive.Root>

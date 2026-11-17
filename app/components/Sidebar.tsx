@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 
 interface SidebarProps {
@@ -29,26 +29,29 @@ export function Sidebar({ children, onCollapseChange }: SidebarProps) {
 
   return (
     <aside
-      className={`sidebar-container hidden lg:flex flex-col space-y-4 transition-all duration-300 ${
-        collapsed ? 'w-12' : 'w-80'
-      } shrink-0 relative`}
-      style={{ overflowX: 'hidden', overflowY: collapsed ? 'hidden' : 'auto' }}
+      className="hidden lg:flex flex-col shrink-0 bg-white border-r"
+      style={{
+        borderColor: 'var(--border)',
+        width: collapsed ? 44 : 300,
+        overflowX: 'hidden',
+        overflowY: collapsed ? 'hidden' : 'auto',
+      }}
     >
-      {/* Toggle Button */}
-      <button
-        onClick={handleToggle}
-        className="absolute top-2 right-2 z-10 p-2 rounded-full shadow-lg transition-all hover:scale-110"
-        style={{
-          background: 'var(--architect-blue)',
-          color: 'white',
-        }}
-        aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+      <div
+        className="flex shrink-0 items-center px-1"
+        style={{ height: 40, justifyContent: collapsed ? 'center' : 'flex-end' }}
       >
-        {collapsed ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
-      </button>
+        <button
+          onClick={handleToggle}
+          className="btn btn-ghost btn-icon"
+          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          {collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+        </button>
+      </div>
 
-      {/* Sidebar Content */}
-      {!collapsed && <div className="space-y-4 animate-slideInLeft">{children}</div>}
+      {!collapsed && <div>{children}</div>}
     </aside>
   );
 }
